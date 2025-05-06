@@ -1,0 +1,302 @@
+package com.example.contribtracker;
+
+import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.text.Text;
+import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.server.command.ServerCommandSource;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import io.javalin.Javalin;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import com.example.contribtracker.database.DatabaseManager;
+import com.example.contribtracker.database.Contribution;
+
+import java.sql.SQLException;
+import java.util.List;
+import java.util.UUID;
+import java.util.HashMap;
+import java.util.Map;
+
+public class ContribTrackerMod implements ModInitializer {
+    public static final String MOD_ID = "contribtracker";
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+    private static Javalin app;
+    private static MinecraftServer server;
+    private static Map<UUID, Contribution> pendingContributions = new HashMap<>();
+
+    @Override
+    public void onInitialize() {
+        LOGGER.info("初始化贡献追踪器Mod");
+        
+        try {
+            DatabaseManager.initialize();
+        } catch (SQLException e) {
+            LOGGER.error("初始化数据库失败", e);
+            return;
+        }
+        
+        // 初始化HTTP服务器
+        initHttpServer();
+        
+        // 注册服务器启动和停止事件
+        ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
+        ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
+        
+        // 注册命令
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            dispatcher.register(net.minecraft.server.command.CommandManager.literal(MOD_ID)
+                .then(net.minecraft.server.command.CommandManager.argument("type", StringArgumentType.string())
+                    .then(net.minecraft.server.command.CommandManager.argument("name", StringArgumentType.string())
+                        .then(net.minecraft.server.command.CommandManager.argument("gameId", StringArgumentType.string())
+                            .then(net.minecraft.server.command.CommandManager.argument("note", StringArgumentType.string())
+                                .executes(this::executeContribCommand)
+                            )
+                        )
+                    )
+                )
+                .then(net.minecraft.server.command.CommandManager.literal("n")
+                    .executes(this::listNearbyContribs)
+                )
+                .then(net.minecraft.server.command.CommandManager.literal("delete")
+                    .then(net.minecraft.server.command.CommandManager.argument("name", StringArgumentType.string())
+                        .requires(source -> source.hasPermissionLevel(2))
+                        .executes(this::deleteContrib)
+                    )
+                )
+                .then(net.minecraft.server.command.CommandManager.argument("note", StringArgumentType.string())
+                    .executes(this::executeParticipateCommand)
+                )
+                .then(net.minecraft.server.command.CommandManager.literal("ignore")
+                    .executes(this::executeIgnoreCommand)
+                )
+            );
+        });
+    }
+
+    private void initHttpServer() {
+        app = Javalin.create(config -> {
+            config.plugins.enableCors(cors -> {
+                cors.add(corsConfig -> {
+                    corsConfig.anyHost();
+                });
+            });
+        });
+        
+        // 贡献者列表接口
+        app.get("/api/contributors", ctx -> {
+            // TODO: 实现获取贡献者列表的逻辑
+            ctx.json(List.of());
+        });
+        
+        // 所有贡献列表接口
+        app.get("/api/contributions", ctx -> {
+            // TODO: 实现获取所有贡献列表的逻辑
+            ctx.json(List.of());
+        });
+        
+        // 单个贡献者贡献列表接口
+        app.get("/api/contributions/:playerId", ctx -> {
+            // TODO: 实现获取单个贡献者贡献列表的逻辑
+            ctx.json(List.of());
+        });
+        
+        // 单个资源详细信息接口
+        app.get("/api/contributions/details/:contributionId", ctx -> {
+            // TODO: 实现获取单个资源详细信息的逻辑
+            ctx.json(new Object());
+        });
+    }
+
+    private void onServerStarting(MinecraftServer server) {
+        ContribTrackerMod.server = server;
+        app.start(8080);
+        LOGGER.info("HTTP服务器已启动在端口8080");
+    }
+
+    private void onServerStopping(MinecraftServer server) {
+        app.stop();
+        try {
+            DatabaseManager.close();
+        } catch (SQLException e) {
+            LOGGER.error("关闭数据库连接失败", e);
+        }
+        LOGGER.info("HTTP服务器已停止");
+    }
+
+    private int executeContribCommand(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+        String type = StringArgumentType.getString(context, "type");
+        String name = StringArgumentType.getString(context, "name");
+        String gameId = StringArgumentType.getString(context, "gameId");
+        String note = StringArgumentType.getString(context, "note");
+        
+        ServerCommandSource source = context.getSource();
+        PlayerEntity player = source.getPlayer();
+        
+        // 检查半径32格内的玩家
+        Vec3d pos = player.getPos();
+        Box box = new Box(pos.add(-32, -32, -32), pos.add(32, 32, 32));
+        List<PlayerEntity> nearbyPlayers = player.getWorld().getEntitiesByType(
+            net.minecraft.entity.EntityType.PLAYER,
+            box,
+            p -> p != player
+        );
+        
+        try {
+            // 保存贡献信息到数据库
+            DatabaseManager.addContribution(
+                name,
+                type,
+                gameId,
+                pos.x,
+                pos.y,
+                pos.z,
+                player.getWorld().getRegistryKey().getValue().toString()
+            );
+            
+            // 添加贡献者
+            DatabaseManager.addContributor(
+                getLastContributionId(),
+                player.getUuid(),
+                player.getName().getString(),
+                note
+            );
+            
+            // 创建贡献对象用于后续玩家参与
+            Contribution contribution = new Contribution();
+            contribution.setName(name);
+            contribution.setType(type);
+            contribution.setGameId(gameId);
+            contribution.setX(pos.x);
+            contribution.setY(pos.y);
+            contribution.setZ(pos.z);
+            contribution.setWorld(player.getWorld().getRegistryKey().getValue().toString());
+            
+            // 发送通知给附近的玩家
+            notifyNearbyPlayers(player, contribution);
+            
+            source.sendMessage(Text.of("§a内容已发布官网"));
+        } catch (SQLException e) {
+            LOGGER.error("保存贡献信息失败", e);
+            source.sendMessage(Text.of("§c保存贡献信息失败"));
+        }
+        
+        return 1;
+    }
+
+    private int executeParticipateCommand(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+        String note = StringArgumentType.getString(context, "note");
+        ServerCommandSource source = context.getSource();
+        PlayerEntity player = source.getPlayer();
+        
+        Contribution contribution = pendingContributions.get(player.getUuid());
+        if (contribution == null) {
+            source.sendMessage(Text.of("§c你没有待处理的贡献邀请"));
+            return 0;
+        }
+        
+        try {
+            // 添加贡献者
+            DatabaseManager.addContributor(
+                getLastContributionId(),
+                player.getUuid(),
+                player.getName().getString(),
+                note
+            );
+            
+            source.sendMessage(Text.of("§a你已成功参与贡献"));
+            pendingContributions.remove(player.getUuid());
+        } catch (SQLException e) {
+            LOGGER.error("保存贡献信息失败", e);
+            source.sendMessage(Text.of("§c保存贡献信息失败"));
+        }
+        
+        return 1;
+    }
+
+    private int executeIgnoreCommand(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+        ServerCommandSource source = context.getSource();
+        PlayerEntity player = source.getPlayer();
+        
+        Contribution contribution = pendingContributions.get(player.getUuid());
+        if (contribution == null) {
+            source.sendMessage(Text.of("§c你没有待处理的贡献邀请"));
+            return 0;
+        }
+        
+        pendingContributions.remove(player.getUuid());
+        source.sendMessage(Text.of("§c那真是太可惜了......"));
+        
+        return 1;
+    }
+
+    private int getLastContributionId() throws SQLException {
+        return DatabaseManager.getLastInsertId();
+    }
+
+    private int listNearbyContribs(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+        PlayerEntity player = context.getSource().getPlayer();
+        Vec3d pos = player.getPos();
+        
+        try {
+            List<Contribution> contributions = DatabaseManager.getNearbyContributions(
+                pos.x, pos.y, pos.z, 32.0
+            );
+            
+            if (contributions.isEmpty()) {
+                context.getSource().sendMessage(Text.of("§c附近没有找到任何贡献"));
+            } else {
+                for (Contribution contribution : contributions) {
+                    context.getSource().sendMessage(Text.of(String.format(
+                        "§a贡献名称: %s\n§b类型: %s\n§e贡献者: %s",
+                        contribution.getName(),
+                        contribution.getType(),
+                        contribution.getContributors()
+                    )));
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.error("获取附近贡献信息失败", e);
+            context.getSource().sendMessage(Text.of("§c获取附近贡献信息失败"));
+        }
+        
+        return 1;
+    }
+
+    private int deleteContrib(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+        String name = StringArgumentType.getString(context, "name");
+        
+        try {
+            DatabaseManager.deleteContribution(name);
+            context.getSource().sendMessage(Text.of("§a已删除贡献: " + name));
+        } catch (SQLException e) {
+            LOGGER.error("删除贡献失败", e);
+            context.getSource().sendMessage(Text.of("§c删除贡献失败"));
+        }
+        
+        return 1;
+    }
+
+    private void notifyNearbyPlayers(PlayerEntity player, Contribution contribution) {
+        Vec3d pos = player.getPos();
+        Box box = new Box(pos.add(-32, -32, -32), pos.add(32, 32, 32));
+        List<PlayerEntity> nearbyPlayers = player.getWorld().getEntitiesByType(
+            net.minecraft.entity.EntityType.PLAYER,
+            box,
+            p -> p != player
+        );
+        
+        for (PlayerEntity nearbyPlayer : nearbyPlayers) {
+            nearbyPlayer.sendMessage(Text.of("§a你周围刚刚有人发布了一个新的贡献"));
+            nearbyPlayer.sendMessage(Text.of("§2我参与啦 | §c与我无关"));
+            nearbyPlayer.sendMessage(Text.of("§e输入：§b/contribtracker <你为此次内容贡献了什么?> 发布至官网"));
+            pendingContributions.put(nearbyPlayer.getUuid(), contribution);
+        }
+    }
+} 
