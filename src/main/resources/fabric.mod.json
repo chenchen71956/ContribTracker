@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "contribtracker",
+  "version": "${version}",
+  "name": "ContribTracker",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/contribtracker/icon.png",
+  "environment": "server",
+  "entrypoints": {
+    "fabric-datagen": [
+      "cn.kongchengli.contribtracker.client.ContribtrackerDataGenerator"
+    ],
+    "main": [
+      "cn.kongchengli.contribtracker.Contribtracker"
+    ]
+  },
+  "mixins": [
+    "contribtracker.mixins.json",
+    {
+      "config": "contribtracker.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
