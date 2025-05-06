@@ -17,6 +17,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.example.contribtracker.database.DatabaseManager;
 import com.example.contribtracker.database.Contribution;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.HoverEvent;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 
 import java.sql.SQLException;
 import java.util.List;
@@ -30,6 +33,8 @@ public class ContribTrackerMod implements ModInitializer {
     private static Javalin app;
     private static MinecraftServer server;
     private static Map<UUID, Contribution> pendingContributions = new HashMap<>();
+    private static Map<UUID, Long> contributionExpiryTimes = new HashMap<>();
+    private static final long INVITATION_EXPIRY_TIME = 5 * 60 * 1000; // 5分钟
 
     @Override
     public void onInitialize() {
@@ -48,6 +53,18 @@ public class ContribTrackerMod implements ModInitializer {
         // 注册服务器启动和停止事件
         ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
+        
+        // 添加定时任务检查过期邀请
+        ServerTickEvents.START_SERVER_TICK.register(server -> {
+            long currentTime = System.currentTimeMillis();
+            contributionExpiryTimes.entrySet().removeIf(entry -> {
+                if (currentTime - entry.getValue() > INVITATION_EXPIRY_TIME) {
+                    pendingContributions.remove(entry.getKey());
+                    return true;
+                }
+                return false;
+            });
+        });
         
         // 注册命令
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
@@ -75,6 +92,13 @@ public class ContribTrackerMod implements ModInitializer {
                 )
                 .then(net.minecraft.server.command.CommandManager.literal("ignore")
                     .executes(this::executeIgnoreCommand)
+                )
+                .then(net.minecraft.server.command.CommandManager.literal("invite")
+                    .then(net.minecraft.server.command.CommandManager.argument("player", StringArgumentType.string())
+                        .then(net.minecraft.server.command.CommandManager.argument("contribution", StringArgumentType.string())
+                            .executes(this::executeInviteCommand)
+                        )
+                    )
                 )
             );
         });
@@ -294,9 +318,83 @@ public class ContribTrackerMod implements ModInitializer {
         
         for (PlayerEntity nearbyPlayer : nearbyPlayers) {
             nearbyPlayer.sendMessage(Text.of("§a你周围刚刚有人发布了一个新的贡献"));
-            nearbyPlayer.sendMessage(Text.of("§2我参与啦 | §c与我无关"));
-            nearbyPlayer.sendMessage(Text.of("§e输入：§b/contribtracker <你为此次内容贡献了什么?> 发布至官网"));
+            nearbyPlayer.sendMessage(Text.of("§a贡献者：" + contribution.getContributors()));
+            nearbyPlayer.sendMessage(Text.of("§a您的选择将会影响官网的内容，请如实选择"));
+            
+            // 创建可点击的消息
+            Text participateText = Text.literal("§2我参与啦")
+                .styled(style -> style.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker <你为此次内容贡献了什么?>"))
+                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击输入你的贡献内容并发布至官网"))));
+            
+            Text ignoreText = Text.literal("§c与我无关")
+                .styled(style -> style.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker ignore"))
+                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("表示不参与，我只是来凑热闹的"))));
+            
+            nearbyPlayer.sendMessage(Text.literal("").append(participateText).append(" | ").append(ignoreText));
             pendingContributions.put(nearbyPlayer.getUuid(), contribution);
+            contributionExpiryTimes.put(nearbyPlayer.getUuid(), System.currentTimeMillis());
         }
+    }
+
+    private int executeInviteCommand(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+        String playerName = StringArgumentType.getString(context, "player");
+        String contributionName = StringArgumentType.getString(context, "contribution");
+        ServerCommandSource source = context.getSource();
+        PlayerEntity inviter = source.getPlayer();
+        
+        try {
+            // 检查贡献是否存在
+            Contribution contribution = DatabaseManager.getContributionByName(contributionName);
+            if (contribution == null) {
+                source.sendMessage(Text.of("§c未找到贡献：" + contributionName));
+                return 0;
+            }
+            
+            // 检查邀请者是否是贡献者
+            if (!DatabaseManager.isContributor(contribution.getId(), inviter.getUuid())) {
+                source.sendMessage(Text.of("§c你不是该贡献的贡献者，无法邀请他人"));
+                return 0;
+            }
+            
+            // 查找目标玩家
+            PlayerEntity targetPlayer = server.getPlayerManager().getPlayer(playerName);
+            if (targetPlayer == null) {
+                source.sendMessage(Text.of("§c未找到玩家：" + playerName));
+                return 0;
+            }
+            
+            // 检查目标玩家是否已经是贡献者
+            if (DatabaseManager.isContributor(contribution.getId(), targetPlayer.getUuid())) {
+                source.sendMessage(Text.of("§c该玩家已经是贡献者"));
+                return 0;
+            }
+            
+            // 发送邀请
+            targetPlayer.sendMessage(Text.of("§a你收到了一个贡献邀请"));
+            targetPlayer.sendMessage(Text.of("§a贡献名称：" + contributionName));
+            targetPlayer.sendMessage(Text.of("§a贡献者：" + contribution.getContributors()));
+            targetPlayer.sendMessage(Text.of("§a您的选择将会影响官网的内容，请如实选择"));
+            
+            Text participateText = Text.literal("§2我参与啦")
+                .styled(style -> style.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker <你为此次内容贡献了什么?>"))
+                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击输入你的贡献内容并发布至官网"))));
+            
+            Text ignoreText = Text.literal("§c与我无关")
+                .styled(style -> style.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker ignore"))
+                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("表示不参与，我只是来凑热闹的"))));
+            
+            targetPlayer.sendMessage(Text.literal("").append(participateText).append(" | ").append(ignoreText));
+            
+            pendingContributions.put(targetPlayer.getUuid(), contribution);
+            contributionExpiryTimes.put(targetPlayer.getUuid(), System.currentTimeMillis());
+            
+            source.sendMessage(Text.of("§a已向玩家 " + playerName + " 发送贡献邀请"));
+            
+        } catch (SQLException e) {
+            LOGGER.error("邀请玩家失败", e);
+            source.sendMessage(Text.of("§c邀请玩家失败"));
+        }
+        
+        return 1;
     }
 } 
