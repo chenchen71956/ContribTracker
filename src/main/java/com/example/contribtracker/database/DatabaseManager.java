@@ -27,6 +27,7 @@ public class DatabaseManager {
                     y REAL NOT NULL,
                     z REAL NOT NULL,
                     world TEXT NOT NULL,
+                    creator_uuid TEXT NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """);
@@ -46,10 +47,11 @@ public class DatabaseManager {
     }
 
     public static void addContribution(String name, String type, String gameId, 
-                                     double x, double y, double z, String world) throws SQLException {
+                                     double x, double y, double z, String world,
+                                     UUID creatorUuid) throws SQLException {
         String sql = """
-            INSERT INTO contributions (name, type, game_id, x, y, z, world)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO contributions (name, type, game_id, x, y, z, world, creator_uuid)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """;
         
         try (PreparedStatement pstmt = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
@@ -60,6 +62,7 @@ public class DatabaseManager {
             pstmt.setDouble(5, y);
             pstmt.setDouble(6, z);
             pstmt.setString(7, world);
+            pstmt.setString(8, creatorUuid.toString());
             pstmt.executeUpdate();
         }
     }
@@ -84,7 +87,8 @@ public class DatabaseManager {
             throws SQLException {
         List<Contribution> contributions = new ArrayList<>();
         String sql = """
-            SELECT c.*, GROUP_CONCAT(ct.player_name) as contributors
+            SELECT c.*, GROUP_CONCAT(ct.player_name) as contributors,
+                   (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name
             FROM contributions c
             LEFT JOIN contributors ct ON c.id = ct.contribution_id
             WHERE ABS(c.x - ?) <= ? AND ABS(c.y - ?) <= ? AND ABS(c.z - ?) <= ?
@@ -112,6 +116,8 @@ public class DatabaseManager {
                     contribution.setWorld(rs.getString("world"));
                     contribution.setCreatedAt(rs.getTimestamp("created_at"));
                     contribution.setContributors(rs.getString("contributors"));
+                    contribution.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
+                    contribution.setCreatorName(rs.getString("creator_name"));
                     contributions.add(contribution);
                 }
             }
@@ -120,12 +126,55 @@ public class DatabaseManager {
         return contributions;
     }
 
-    public static void deleteContribution(String name) throws SQLException {
-        String sql = "DELETE FROM contributions WHERE name = ?";
+    public static void deleteContribution(int contributionId) throws SQLException {
+        String sql = "DELETE FROM contributions WHERE id = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
-            pstmt.setString(1, name);
+            pstmt.setInt(1, contributionId);
             pstmt.executeUpdate();
         }
+    }
+
+    public static void deleteContributor(int contributionId, UUID playerUuid) throws SQLException {
+        String sql = "DELETE FROM contributors WHERE contribution_id = ? AND player_uuid = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            pstmt.setString(2, playerUuid.toString());
+            pstmt.executeUpdate();
+        }
+    }
+
+    public static Contribution getContributionById(int id) throws SQLException {
+        String sql = """
+            SELECT c.*, GROUP_CONCAT(ct.player_name) as contributors,
+                   (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name
+            FROM contributions c
+            LEFT JOIN contributors ct ON c.id = ct.contribution_id
+            WHERE c.id = ?
+            GROUP BY c.id
+        """;
+        
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, id);
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    Contribution contribution = new Contribution();
+                    contribution.setId(rs.getInt("id"));
+                    contribution.setName(rs.getString("name"));
+                    contribution.setType(rs.getString("type"));
+                    contribution.setGameId(rs.getString("game_id"));
+                    contribution.setX(rs.getDouble("x"));
+                    contribution.setY(rs.getDouble("y"));
+                    contribution.setZ(rs.getDouble("z"));
+                    contribution.setWorld(rs.getString("world"));
+                    contribution.setCreatedAt(rs.getTimestamp("created_at"));
+                    contribution.setContributors(rs.getString("contributors"));
+                    contribution.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
+                    contribution.setCreatorName(rs.getString("creator_name"));
+                    return contribution;
+                }
+            }
+        }
+        return null;
     }
 
     public static int getLastInsertId() throws SQLException {

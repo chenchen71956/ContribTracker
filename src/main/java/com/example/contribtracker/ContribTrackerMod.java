@@ -82,7 +82,7 @@ public class ContribTrackerMod implements ModInitializer {
                     .executes(this::listNearbyContribs)
                 )
                 .then(net.minecraft.server.command.CommandManager.literal("delete")
-                    .then(net.minecraft.server.command.CommandManager.argument("name", StringArgumentType.string())
+                    .then(net.minecraft.server.command.CommandManager.argument("id", IntegerArgumentType.integer())
                         .requires(source -> source.hasPermissionLevel(2))
                         .executes(this::deleteContrib)
                     )
@@ -163,25 +163,17 @@ public class ContribTrackerMod implements ModInitializer {
         ServerCommandSource source = context.getSource();
         PlayerEntity player = source.getPlayer();
         
-        // 检查半径32格内的玩家
-        Vec3d pos = player.getPos();
-        Box box = new Box(pos.add(-32, -32, -32), pos.add(32, 32, 32));
-        List<PlayerEntity> nearbyPlayers = player.getWorld().getEntitiesByType(
-            net.minecraft.entity.EntityType.PLAYER,
-            box,
-            p -> p != player
-        );
-        
         try {
             // 保存贡献信息到数据库
             DatabaseManager.addContribution(
                 name,
                 type,
                 gameId,
-                pos.x,
-                pos.y,
-                pos.z,
-                player.getWorld().getRegistryKey().getValue().toString()
+                player.getX(),
+                player.getY(),
+                player.getZ(),
+                player.getWorld().getRegistryKey().getValue().toString(),
+                player.getUuid()
             );
             
             // 添加贡献者
@@ -197,10 +189,11 @@ public class ContribTrackerMod implements ModInitializer {
             contribution.setName(name);
             contribution.setType(type);
             contribution.setGameId(gameId);
-            contribution.setX(pos.x);
-            contribution.setY(pos.y);
-            contribution.setZ(pos.z);
+            contribution.setX(player.getX());
+            contribution.setY(player.getY());
+            contribution.setZ(player.getZ());
             contribution.setWorld(player.getWorld().getRegistryKey().getValue().toString());
+            contribution.setCreatorUuid(player.getUuid());
             
             // 发送通知给附近的玩家
             notifyNearbyPlayers(player, contribution);
@@ -266,11 +259,10 @@ public class ContribTrackerMod implements ModInitializer {
 
     private int listNearbyContribs(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
         PlayerEntity player = context.getSource().getPlayer();
-        Vec3d pos = player.getPos();
         
         try {
             List<Contribution> contributions = DatabaseManager.getNearbyContributions(
-                pos.x, pos.y, pos.z, 32.0
+                player.getX(), player.getY(), player.getZ(), 32.0
             );
             
             if (contributions.isEmpty()) {
@@ -278,10 +270,10 @@ public class ContribTrackerMod implements ModInitializer {
             } else {
                 for (Contribution contribution : contributions) {
                     context.getSource().sendMessage(Text.of(String.format(
-                        "§a贡献名称: %s\n§b类型: %s\n§e贡献者: %s",
+                        "§a| %d | %s | %s |",
+                        contribution.getId(),
                         contribution.getName(),
-                        contribution.getType(),
-                        contribution.getContributors()
+                        contribution.getCreatorName()
                     )));
                 }
             }
@@ -294,14 +286,61 @@ public class ContribTrackerMod implements ModInitializer {
     }
 
     private int deleteContrib(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
-        String name = StringArgumentType.getString(context, "name");
+        int contributionId = IntegerArgumentType.getInteger(context, "id");
+        ServerCommandSource source = context.getSource();
+        PlayerEntity player = source.getPlayer();
         
         try {
-            DatabaseManager.deleteContribution(name);
-            context.getSource().sendMessage(Text.of("§a已删除贡献: " + name));
+            Contribution contribution = DatabaseManager.getContributionById(contributionId);
+            if (contribution == null) {
+                source.sendMessage(Text.of("§c未找到贡献"));
+                return 0;
+            }
+            
+            if (!ContribPermissionManager.canDeleteContribution(player, contribution)) {
+                source.sendMessage(Text.of("§c你没有权限删除这个贡献"));
+                return 0;
+            }
+            
+            DatabaseManager.deleteContribution(contributionId);
+            source.sendMessage(Text.of("§a已删除贡献"));
         } catch (SQLException e) {
             LOGGER.error("删除贡献失败", e);
-            context.getSource().sendMessage(Text.of("§c删除贡献失败"));
+            source.sendMessage(Text.of("§c删除贡献失败"));
+        }
+        
+        return 1;
+    }
+
+    private int deleteContributor(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+        int contributionId = IntegerArgumentType.getInteger(context, "id");
+        String playerName = StringArgumentType.getString(context, "player");
+        ServerCommandSource source = context.getSource();
+        PlayerEntity player = source.getPlayer();
+        
+        try {
+            Contribution contribution = DatabaseManager.getContributionById(contributionId);
+            if (contribution == null) {
+                source.sendMessage(Text.of("§c未找到贡献"));
+                return 0;
+            }
+            
+            PlayerEntity targetPlayer = server.getPlayerManager().getPlayer(playerName);
+            if (targetPlayer == null) {
+                source.sendMessage(Text.of("§c未找到玩家"));
+                return 0;
+            }
+            
+            if (!ContribPermissionManager.canDeleteContributor(player, contribution, targetPlayer.getUuid())) {
+                source.sendMessage(Text.of("§c你没有权限删除这个贡献者"));
+                return 0;
+            }
+            
+            DatabaseManager.deleteContributor(contributionId, targetPlayer.getUuid());
+            source.sendMessage(Text.of("§a已删除贡献者"));
+        } catch (SQLException e) {
+            LOGGER.error("删除贡献者失败", e);
+            source.sendMessage(Text.of("§c删除贡献者失败"));
         }
         
         return 1;

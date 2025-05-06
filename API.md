@@ -42,12 +42,13 @@ GET /api/contributions
     "name": "红石农场",
     "type": "红石",
     "gameId": null,
-    "note": "自动收割小麦",
     "x": 100.5,
     "y": 64.0,
     "z": -200.3,
     "world": "minecraft:overworld",
     "createdAt": "2024-03-20T10:30:00Z",
+    "creatorUuid": "550e8400-e29b-41d4-a716-446655440000",
+    "creatorName": "Player1",
     "contributors": "Player1,Player2"
   }
 ]
@@ -71,8 +72,8 @@ GET /api/contributions/:playerId
     "id": 1,
     "name": "红石农场",
     "type": "红石",
-    "note": "自动收割小麦",
-    "createdAt": "2024-03-20T10:30:00Z"
+    "createdAt": "2024-03-20T10:30:00Z",
+    "creatorName": "Player1"
   }
 ]
 ```
@@ -95,17 +96,23 @@ GET /api/contributions/details/:contributionId
   "name": "红石农场",
   "type": "红石",
   "gameId": null,
-  "note": "自动收割小麦",
   "x": 100.5,
   "y": 64.0,
   "z": -200.3,
   "world": "minecraft:overworld",
   "createdAt": "2024-03-20T10:30:00Z",
+  "creatorUuid": "550e8400-e29b-41d4-a716-446655440000",
+  "creatorName": "Player1",
   "contributors": [
     {
       "playerUuid": "550e8400-e29b-41d4-a716-446655440000",
       "playerName": "Player1",
       "note": "主要设计者"
+    },
+    {
+      "playerUuid": "550e8400-e29b-41d4-a716-446655440001",
+      "playerName": "Player2",
+      "note": "建造了农场结构"
     }
   ]
 }
@@ -125,5 +132,6 @@ GET /api/contributions/details/:contributionId
 常见错误代码：
 
 - 400: 请求参数错误
+- 403: 权限不足
 - 404: 资源未找到
 - 500: 服务器内部错误

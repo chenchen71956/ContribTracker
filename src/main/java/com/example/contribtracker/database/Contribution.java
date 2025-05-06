@@ -1,6 +1,7 @@
 package com.example.contribtracker.database;
 
 import java.sql.Timestamp;
+import java.util.UUID;
 
 public class Contribution {
     private int id;
@@ -13,6 +14,7 @@ public class Contribution {
     private String world;
     private Timestamp createdAt;
     private String contributors;
+    private UUID creatorUuid;
 
     // Getters and Setters
     public int getId() {
@@ -93,5 +95,13 @@ public class Contribution {
 
     public void setContributors(String contributors) {
         this.contributors = contributors;
+    }
+
+    public UUID getCreatorUuid() {
+        return creatorUuid;
+    }
+
+    public void setCreatorUuid(UUID creatorUuid) {
+        this.creatorUuid = creatorUuid;
     }
 } 
