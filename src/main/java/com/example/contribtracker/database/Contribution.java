@@ -1,4 +1,4 @@
-package com.example.contribtracker.database;
+package cn.kongchengli.contribtracker.database;
 
 import java.sql.Timestamp;
 import java.util.UUID;

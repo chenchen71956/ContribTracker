@@ -1,4 +1,4 @@
-package com.example.contribtracker.database;
+package cn.kongchengli.contribtracker.database;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -40,7 +40,10 @@ public class DatabaseManager {
                     player_uuid TEXT NOT NULL,
                     player_name TEXT NOT NULL,
                     note TEXT,
-                    FOREIGN KEY (contribution_id) REFERENCES contributions(id)
+                    inviter_uuid TEXT,
+                    level INTEGER DEFAULT 1,
+                    FOREIGN KEY (contribution_id) REFERENCES contributions(id),
+                    FOREIGN KEY (inviter_uuid) REFERENCES contributors(player_uuid)
                 )
             """);
         }
@@ -67,11 +70,16 @@ public class DatabaseManager {
         }
     }
 
-    public static void addContributor(int contributionId, UUID playerUuid, String playerName, String note) 
+    public static void addContributor(int contributionId, UUID playerUuid, String playerName, String note, UUID inviterUuid) 
             throws SQLException {
         String sql = """
-            INSERT INTO contributors (contribution_id, player_uuid, player_name, note)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO contributors (contribution_id, player_uuid, player_name, note, inviter_uuid, level)
+            VALUES (?, ?, ?, ?, ?, 
+                CASE 
+                    WHEN ? IS NULL THEN 1
+                    ELSE (SELECT level + 1 FROM contributors WHERE contribution_id = ? AND player_uuid = ?)
+                END
+            )
         """;
         
         try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
@@ -79,6 +87,10 @@ public class DatabaseManager {
             pstmt.setString(2, playerUuid.toString());
             pstmt.setString(3, playerName);
             pstmt.setString(4, note);
+            pstmt.setString(5, inviterUuid != null ? inviterUuid.toString() : null);
+            pstmt.setString(6, inviterUuid != null ? inviterUuid.toString() : null);
+            pstmt.setInt(7, contributionId);
+            pstmt.setString(8, inviterUuid != null ? inviterUuid.toString() : null);
             pstmt.executeUpdate();
         }
     }
@@ -186,6 +198,220 @@ public class DatabaseManager {
             }
         }
         throw new SQLException("无法获取最后插入的ID");
+    }
+
+    public static boolean canManageContributor(int contributionId, UUID managerUuid, UUID targetUuid) throws SQLException {
+        String sql = """
+            SELECT c1.level as manager_level, c2.level as target_level
+            FROM contributors c1
+            JOIN contributors c2 ON c1.contribution_id = c2.contribution_id
+            WHERE c1.contribution_id = ? AND c1.player_uuid = ? AND c2.player_uuid = ?
+        """;
+        
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            pstmt.setString(2, managerUuid.toString());
+            pstmt.setString(3, targetUuid.toString());
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    int managerLevel = rs.getInt("manager_level");
+                    int targetLevel = rs.getInt("target_level");
+                    return managerLevel < targetLevel;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 检查玩家是否是一级贡献者
+     * @param contributionId 贡献ID
+     * @param playerUuid 玩家UUID
+     * @return true如果玩家是一级贡献者
+     */
+    public static boolean isLevelOneContributor(int contributionId, UUID playerUuid) throws SQLException {
+        String sql = """
+            SELECT level
+            FROM contributors
+            WHERE contribution_id = ? AND player_uuid = ?
+        """;
+        
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            pstmt.setString(2, playerUuid.toString());
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    int level = rs.getInt("level");
+                    return level == 1;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 获取贡献者的上级信息
+     * @param contributionId 贡献ID
+     * @param playerUuid 玩家UUID
+     * @return 上级贡献者的信息，如果没有上级则返回null
+     */
+    public static ContributorInfo getContributorSuperior(int contributionId, UUID playerUuid) throws SQLException {
+        String sql = """
+            SELECT c.player_uuid, c.player_name, c.level
+            FROM contributors c
+            WHERE c.contribution_id = ? AND c.player_uuid = (
+                SELECT inviter_uuid 
+                FROM contributors 
+                WHERE contribution_id = ? AND player_uuid = ?
+            )
+        """;
+        
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            pstmt.setInt(2, contributionId);
+            pstmt.setString(3, playerUuid.toString());
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    ContributorInfo superior = new ContributorInfo();
+                    superior.setPlayerUuid(UUID.fromString(rs.getString("player_uuid")));
+                    superior.setPlayerName(rs.getString("player_name"));
+                    superior.setLevel(rs.getInt("level"));
+                    return superior;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 检查玩家是否已经是贡献者
+     * @param contributionId 贡献ID
+     * @param playerUuid 玩家UUID
+     * @return 如果是贡献者，返回贡献者信息；否则返回null
+     */
+    public static ContributorInfo getContributorInfo(int contributionId, UUID playerUuid) throws SQLException {
+        String sql = """
+            SELECT player_uuid, player_name, level, inviter_uuid
+            FROM contributors
+            WHERE contribution_id = ? AND player_uuid = ?
+        """;
+        
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            pstmt.setString(2, playerUuid.toString());
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    ContributorInfo info = new ContributorInfo();
+                    info.setPlayerUuid(UUID.fromString(rs.getString("player_uuid")));
+                    info.setPlayerName(rs.getString("player_name"));
+                    info.setLevel(rs.getInt("level"));
+                    String inviterUuid = rs.getString("inviter_uuid");
+                    if (inviterUuid != null) {
+                        info.setInviterUuid(UUID.fromString(inviterUuid));
+                    }
+                    return info;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 获取指定贡献的所有贡献者信息
+     * @param contributionId 贡献ID
+     * @return 贡献者信息列表
+     */
+    public static List<ContributorInfo> getContributorsByContributionId(int contributionId) throws SQLException {
+        List<ContributorInfo> contributors = new ArrayList<>();
+        String sql = """
+            SELECT player_uuid, player_name, level, inviter_uuid
+            FROM contributors
+            WHERE contribution_id = ?
+            ORDER BY level ASC, player_name ASC
+        """;
+        
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    ContributorInfo info = new ContributorInfo();
+                    info.setPlayerUuid(UUID.fromString(rs.getString("player_uuid")));
+                    info.setPlayerName(rs.getString("player_name"));
+                    info.setLevel(rs.getInt("level"));
+                    String inviterUuid = rs.getString("inviter_uuid");
+                    if (inviterUuid != null) {
+                        info.setInviterUuid(UUID.fromString(inviterUuid));
+                    }
+                    contributors.add(info);
+                }
+            }
+        }
+        
+        return contributors;
+    }
+
+    /**
+     * 获取所有贡献信息
+     * @return 贡献列表
+     */
+    public static List<Contribution> getAllContributions() throws SQLException {
+        List<Contribution> contributions = new ArrayList<>();
+        String sql = """
+            SELECT c.*, GROUP_CONCAT(ct.player_name) as contributors,
+                   (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name
+            FROM contributions c
+            LEFT JOIN contributors ct ON c.id = ct.contribution_id
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+        """;
+        
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            while (rs.next()) {
+                Contribution contribution = new Contribution();
+                contribution.setId(rs.getInt("id"));
+                contribution.setName(rs.getString("name"));
+                contribution.setType(rs.getString("type"));
+                contribution.setGameId(rs.getString("game_id"));
+                contribution.setX(rs.getDouble("x"));
+                contribution.setY(rs.getDouble("y"));
+                contribution.setZ(rs.getDouble("z"));
+                contribution.setWorld(rs.getString("world"));
+                contribution.setCreatedAt(rs.getTimestamp("created_at"));
+                contribution.setContributors(rs.getString("contributors"));
+                contribution.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
+                contribution.setCreatorName(rs.getString("creator_name"));
+                contributions.add(contribution);
+            }
+        }
+        
+        return contributions;
+    }
+
+    /**
+     * 获取指定贡献的贡献者数量
+     * @param contributionId 贡献ID
+     * @return 贡献者数量
+     */
+    public static int getContributorCount(int contributionId) throws SQLException {
+        String sql = "SELECT COUNT(*) as count FROM contributors WHERE contribution_id = ?";
+        
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getInt("count");
+                }
+            }
+        }
+        
+        return 0;
     }
 
     public static void close() throws SQLException {
