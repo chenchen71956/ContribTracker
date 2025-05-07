@@ -1,20 +1,21 @@
 package cn.kongchengli.contribtracker.database;
 
 import java.sql.Timestamp;
+import java.util.List;
 import java.util.UUID;
 
 public class Contribution {
     private int id;
     private String name;
     private String type;
-    private String gameId;
+    private UUID creatorUuid;
+    private String creatorName;
     private double x;
     private double y;
     private double z;
     private String world;
     private Timestamp createdAt;
-    private String contributors;
-    private UUID creatorUuid;
+    private List<ContributorInfo> contributorList;
 
     // Getters and Setters
     public int getId() {
@@ -41,12 +42,20 @@ public class Contribution {
         this.type = type;
     }
 
-    public String getGameId() {
-        return gameId;
+    public UUID getCreatorUuid() {
+        return creatorUuid;
     }
 
-    public void setGameId(String gameId) {
-        this.gameId = gameId;
+    public void setCreatorUuid(UUID creatorUuid) {
+        this.creatorUuid = creatorUuid;
+    }
+
+    public String getCreatorName() {
+        return creatorName;
+    }
+
+    public void setCreatorName(String creatorName) {
+        this.creatorName = creatorName;
     }
 
     public double getX() {
@@ -89,19 +98,11 @@ public class Contribution {
         this.createdAt = createdAt;
     }
 
-    public String getContributors() {
-        return contributors;
+    public List<ContributorInfo> getContributorList() {
+        return contributorList;
     }
 
-    public void setContributors(String contributors) {
-        this.contributors = contributors;
-    }
-
-    public UUID getCreatorUuid() {
-        return creatorUuid;
-    }
-
-    public void setCreatorUuid(UUID creatorUuid) {
-        this.creatorUuid = creatorUuid;
+    public void setContributorList(List<ContributorInfo> contributorList) {
+        this.contributorList = contributorList;
     }
 } 

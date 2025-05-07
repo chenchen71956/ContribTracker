@@ -140,6 +140,107 @@
 - `GET /api/contributions/:playerId` - 获取指定玩家的贡献列表
 - `GET /api/contributions/details/:contributionId` - 获取指定贡献的详细信息
 
+## WebSocket API
+
+模组提供了WebSocket接口用于实时获取贡献者信息：
+
+- 连接地址：`ws://localhost:25566/ws`
+
+### 消息格式
+
+所有消息都使用JSON格式，基本结构如下：
+
+```json
+{
+    "type": "消息类型",
+    "data": "消息数据"
+}
+```
+
+### 消息类型
+
+1. 客户端发送：
+   - `check` - 请求获取所有数据
+   ```json
+   {
+       "type": "check"
+   }
+   ```
+
+2. 服务器发送：
+   - `all_data` - 所有贡献数据
+   ```json
+   {
+       "type": "all_data",
+       "data": [
+           {
+               "id": 1,
+               "name": "贡献名称",
+               "type": "贡献类型",
+               "creatorUuid": "创建者UUID",
+               "creatorName": "创建者名称",
+               "x": 0,
+               "y": 0,
+               "z": 0,
+               "world": "世界名称",
+               "createdAt": "创建时间",
+               "contributorList": [
+                   {
+                       "playerUuid": "玩家UUID",
+                       "playerName": "玩家名称",
+                       "level": 1,
+                       "inviterUuid": "邀请者UUID",
+                       "note": "玩家贡献说明"
+                   }
+               ]
+           }
+       ]
+   }
+   ```
+
+   - `update` - 贡献更新
+   ```json
+   {
+       "type": "update",
+       "data": {
+           "id": 1,
+           "name": "贡献名称",
+           "type": "贡献类型",
+           "creatorUuid": "创建者UUID",
+           "creatorName": "创建者名称",
+           "x": 0,
+           "y": 0,
+           "z": 0,
+           "world": "世界名称",
+           "createdAt": "创建时间",
+           "contributorList": [
+               {
+                   "playerUuid": "玩家UUID",
+                   "playerName": "玩家名称",
+                   "level": 1,
+                   "inviterUuid": "邀请者UUID",
+                   "note": "玩家贡献说明"
+               }
+           ]
+       }
+   }
+   ```
+
+   - `error` - 错误信息
+   ```json
+   {
+       "type": "error",
+       "data": "错误信息"
+   }
+   ```
+
+### 使用说明
+
+1. 连接WebSocket服务器
+2. 连接成功后，服务器会自动发送所有数据
+3. 当有贡献更新时，服务器会自动广播更新消息
+4. 客户端可以随时发送`check`消息请求获取最新数据
+
 ## 数据库
 
 使用SQLite数据库存储数据，数据库文件位于服务器根目录的`contributions.db`。

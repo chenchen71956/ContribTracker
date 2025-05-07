@@ -7,6 +7,7 @@ public class ContributorInfo {
     private String playerName;
     private int level;
     private UUID inviterUuid;
+    private String note;
 
     public UUID getPlayerUuid() {
         return playerUuid;
@@ -38,5 +39,13 @@ public class ContributorInfo {
 
     public void setInviterUuid(UUID inviterUuid) {
         this.inviterUuid = inviterUuid;
+    }
+
+    public String getNote() {
+        return note;
+    }
+
+    public void setNote(String note) {
+        this.note = note;
     }
 } 

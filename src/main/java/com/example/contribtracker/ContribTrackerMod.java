@@ -20,12 +20,13 @@ import cn.kongchengli.cn.contribtracker.database.Contribution;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.HoverEvent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-
-import java.sql.SQLException;
+import io.javalin.websocket.WsContext;
 import java.util.List;
 import java.util.UUID;
 import java.util.HashMap;
 import java.util.Map;
+import java.sql.SQLException;
+import java.util.Pair;
 
 public class ContribTrackerMod implements ModInitializer {
     public static final String MOD_ID = "contribtracker";
@@ -47,8 +48,8 @@ public class ContribTrackerMod implements ModInitializer {
             return;
         }
         
-        // 初始化HTTP服务器
-        initHttpServer();
+        // 设置WebSocket服务器
+        setupWebSocketServer();
         
         // 注册服务器启动和停止事件
         ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
@@ -68,40 +69,28 @@ public class ContribTrackerMod implements ModInitializer {
         
         // 注册命令
         registerCommands();
+        
+        // 注册事件监听器
+        registerEventListeners();
     }
 
-    private void initHttpServer() {
-        app = Javalin.create(config -> {
+    private void setupWebSocketServer() {
+        Javalin app = Javalin.create(config -> {
             config.plugins.enableCors(cors -> {
-                cors.add(corsConfig -> {
-                    corsConfig.anyHost();
-                });
+                cors.add(it -> it.anyHost());
             });
         });
-        
-        // 贡献者列表接口
-        app.get("/api/contributors", ctx -> {
-            // TODO: 实现获取贡献者列表的逻辑
-            ctx.json(List.of());
+
+        // WebSocket端点
+        app.ws("/ws", ws -> {
+            ws.onConnect(WebSocketHandler::onConnect);
+            ws.onClose(WebSocketHandler::onClose);
+            ws.onMessage(WebSocketHandler::onMessage);
         });
-        
-        // 所有贡献列表接口
-        app.get("/api/contributions", ctx -> {
-            // TODO: 实现获取所有贡献列表的逻辑
-            ctx.json(List.of());
-        });
-        
-        // 单个贡献者贡献列表接口
-        app.get("/api/contributions/:playerId", ctx -> {
-            // TODO: 实现获取单个贡献者贡献列表的逻辑
-            ctx.json(List.of());
-        });
-        
-        // 单个资源详细信息接口
-        app.get("/api/contributions/details/:contributionId", ctx -> {
-            // TODO: 实现获取单个资源详细信息的逻辑
-            ctx.json(new Object());
-        });
+
+        // 启动服务器
+        app.start(25566);
+        LOGGER.info("WebSocket服务器已启动在端口 25566");
     }
 
     private void onServerStarting(MinecraftServer server) {
