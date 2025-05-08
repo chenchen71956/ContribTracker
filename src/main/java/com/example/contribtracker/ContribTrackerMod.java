@@ -1,4 +1,4 @@
-package cn.kongchengli.cn.contribtracker;
+package com.example.contribtracker;
 
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -15,18 +15,23 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.javalin.Javalin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import cn.kongchengli.cn.contribtracker.database.DatabaseManager;
-import cn.kongchengli.cn.contribtracker.database.Contribution;
+import com.example.contribtracker.database.DatabaseManager;
+import com.example.contribtracker.database.Contribution;
 import net.minecraft.text.ClickEvent;
 import net.minecraft.text.HoverEvent;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
-import io.javalin.websocket.WsContext;
 import java.util.List;
 import java.util.UUID;
 import java.util.HashMap;
 import java.util.Map;
 import java.sql.SQLException;
-import java.util.Pair;
+import net.minecraft.server.command.CommandManager;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.Formatting;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.example.contribtracker.websocket.WebSocketHandler;
+import com.example.contribtracker.command.ContribCommandHandler;
+import com.example.contribtracker.database.ContributorInfo;
 
 public class ContribTrackerMod implements ModInitializer {
     public static final String MOD_ID = "contribtracker";
@@ -111,36 +116,36 @@ public class ContribTrackerMod implements ModInitializer {
 
     private void registerCommands() {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(CommandManager.literal("contribtracker")
-                .then(CommandManager.argument("type", StringArgumentType.string())
-                    .then(CommandManager.argument("name", StringArgumentType.string())
-                        .then(CommandManager.argument("note", StringArgumentType.string())
+            var command = CommandManager.literal("contribtracker")
+                .then(CommandManager.argument("type", StringArgumentType.string()))
+                    .then(CommandManager.argument("name", StringArgumentType.string()))
+                        .then(CommandManager.argument("note", StringArgumentType.string()))
                             .executes(context -> executeContribCommand(context, null, null))
-                            .then(CommandManager.argument("gameId", StringArgumentType.string())
+                            .then(CommandManager.argument("gameId", StringArgumentType.string()))
                                 .then(CommandManager.argument("note", StringArgumentType.string())
-                                    .executes(context -> executeContribCommand(context, 
+                                    .executes(context -> executeContribCommand(context,
                                         StringArgumentType.getString(context, "gameId"),
-                                        StringArgumentType.getString(context, "note")))
-                                .then(CommandManager.argument("gameId2", StringArgumentType.string())
-                                    .then(CommandManager.argument("note2", StringArgumentType.string())
-                                        .executes(context -> executeContribCommand(context, 
-                                            StringArgumentType.getString(context, "gameId2"),
-                                            StringArgumentType.getString(context, "note2")))
-                                    .then(CommandManager.argument("gameId3", StringArgumentType.string())
-                                        .then(CommandManager.argument("note3", StringArgumentType.string())
-                                            .executes(context -> executeContribCommand(context, 
-                                                StringArgumentType.getString(context, "gameId3"),
-                                                StringArgumentType.getString(context, "note3"))))
-                                    .then(CommandManager.argument("gameId4", StringArgumentType.string())
-                                        .then(CommandManager.argument("note4", StringArgumentType.string())
-                                            .executes(context -> executeContribCommand(context, 
-                                                StringArgumentType.getString(context, "gameId4"),
-                                                StringArgumentType.getString(context, "note4"))))
-                                    .then(CommandManager.argument("gameId5", StringArgumentType.string())
-                                        .then(CommandManager.argument("note5", StringArgumentType.string())
-                                            .executes(context -> executeContribCommand(context, 
-                                                StringArgumentType.getString(context, "gameId5"),
-                                                StringArgumentType.getString(context, "note5"))))))))))))
+                                        StringArgumentType.getString(context, "note"))))
+                            .then(CommandManager.argument("gameId2", StringArgumentType.string())
+                                .then(CommandManager.argument("note2", StringArgumentType.string())
+                                    .executes(context -> executeContribCommand(context,
+                                        StringArgumentType.getString(context, "gameId2"),
+                                        StringArgumentType.getString(context, "note2"))))
+                            .then(CommandManager.argument("gameId3", StringArgumentType.string())
+                                .then(CommandManager.argument("note3", StringArgumentType.string())
+                                    .executes(context -> executeContribCommand(context,
+                                        StringArgumentType.getString(context, "gameId3"),
+                                        StringArgumentType.getString(context, "note3"))))
+                            .then(CommandManager.argument("gameId4", StringArgumentType.string())
+                                .then(CommandManager.argument("note4", StringArgumentType.string())
+                                    .executes(context -> executeContribCommand(context,
+                                        StringArgumentType.getString(context, "gameId4"),
+                                        StringArgumentType.getString(context, "note4"))))
+                            .then(CommandManager.argument("gameId5", StringArgumentType.string())
+                                .then(CommandManager.argument("note5", StringArgumentType.string())
+                                    .executes(context -> executeContribCommand(context,
+                                        StringArgumentType.getString(context, "gameId5"),
+                                        StringArgumentType.getString(context, "note5"))))))))
                 .then(CommandManager.literal("n")
                     .executes(this::listNearbyContribs))
                 .then(CommandManager.literal("delete")
@@ -166,7 +171,9 @@ public class ContribTrackerMod implements ModInitializer {
                         .executes(context -> ContribCommandHandler.listAllContributions(context))))
                 .then(CommandManager.literal("info")
                     .then(CommandManager.argument("id", IntegerArgumentType.integer())
-                        .executes(context -> ContribCommandHandler.showContributionDetails(context)))));
+                        .executes(context -> ContribCommandHandler.showContributionDetails(context))));
+
+            dispatcher.register(command);
         });
     }
 
@@ -182,7 +189,7 @@ public class ContribTrackerMod implements ModInitializer {
 
         try {
             // 保存贡献信息
-            int contributionId = DatabaseManager.addContribution(
+            DatabaseManager.addContribution(
                 name,
                 type,
                 gameId,
@@ -193,12 +200,14 @@ public class ContribTrackerMod implements ModInitializer {
                 player.getUuid()
             );
 
+            int contributionId = DatabaseManager.getLastInsertId();
+
             // 添加创建者作为贡献者（level 1）
-            DatabaseManager.addContributor(contributionId, player.getUuid(), creatorNote, null);
+            DatabaseManager.addContributor(contributionId, player.getUuid(), player.getName().getString(), creatorNote, null);
 
             // 如果有额外的贡献者，添加他们（level 2）
             if (gameId != null && note != null) {
-                DatabaseManager.addContributor(contributionId, UUID.fromString(gameId), note, player.getUuid());
+                DatabaseManager.addContributor(contributionId, UUID.fromString(gameId), "", note, player.getUuid());
             }
 
             // 检查是否有更多贡献者
@@ -207,7 +216,7 @@ public class ContribTrackerMod implements ModInitializer {
                     String additionalGameId = StringArgumentType.getString(context, "gameId" + i);
                     String additionalNote = StringArgumentType.getString(context, "note" + i);
                     if (additionalGameId != null && additionalNote != null) {
-                        DatabaseManager.addContributor(contributionId, UUID.fromString(additionalGameId), additionalNote, player.getUuid());
+                        DatabaseManager.addContributor(contributionId, UUID.fromString(additionalGameId), "", additionalNote, player.getUuid());
                     }
                 } catch (Exception e) {
                     // 如果没有更多参数，继续执行
@@ -215,8 +224,12 @@ public class ContribTrackerMod implements ModInitializer {
                 }
             }
 
-            // 通知附近玩家
-            notifyNearbyPlayers(player, contributionId, name, type);
+            // 获取贡献对象
+            Contribution contribution = DatabaseManager.getContributionById(contributionId);
+            if (contribution != null) {
+                // 通知附近玩家
+                notifyNearbyPlayers(player, contribution);
+            }
 
             source.sendMessage(Text.literal("§a内容已发布官网！").formatted(Formatting.GREEN));
             return 1;
@@ -531,5 +544,56 @@ public class ContribTrackerMod implements ModInitializer {
         }
         
         return 1;
+    }
+
+    private void registerEventListeners() {
+        // 注册事件监听器
+        ServerTickEvents.START_SERVER_TICK.register(server -> {
+            // 处理定时任务
+        });
+    }
+
+    private int invitePlayer(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+        ServerCommandSource source = context.getSource();
+        ServerPlayerEntity player = source.getPlayer();
+        String contributionName = StringArgumentType.getString(context, "contribution");
+        String targetPlayerName = StringArgumentType.getString(context, "player");
+        
+        Contribution contribution = DatabaseManager.getContributionByName(contributionName);
+        if (contribution == null) {
+            source.sendMessage(Text.of("§c找不到贡献点：" + contributionName));
+            return 0;
+        }
+        
+        ServerPlayerEntity targetPlayer = source.getServer().getPlayerManager().getPlayer(targetPlayerName);
+        if (targetPlayer == null) {
+            source.sendMessage(Text.of("§c找不到玩家：" + targetPlayerName));
+            return 0;
+        }
+        
+        try {
+            if (DatabaseManager.isContributor(contribution.getId(), targetPlayer.getUuid())) {
+                source.sendMessage(Text.of("§c该玩家已经是贡献者"));
+                return 0;
+            }
+            
+            DatabaseManager.addContributor(contribution.getId(), targetPlayer.getUuid(), "", "", player.getUuid());
+            source.sendMessage(Text.of("§a已邀请玩家 " + targetPlayerName + " 加入贡献点"));
+            targetPlayer.sendMessage(Text.of("§a你被邀请加入贡献点：" + contributionName));
+            
+            return 1;
+        } catch (Exception e) {
+            LOGGER.error("邀请玩家失败", e);
+            source.sendMessage(Text.of("§c邀请玩家失败：" + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private void notifyNearbyPlayers(ServerPlayerEntity player, Contribution contribution) {
+        // 通知附近的玩家
+        player.getServerWorld().getPlayers().stream()
+            .filter(p -> p != player && p.squaredDistanceTo(player.getX(), player.getY(), player.getZ()) <= 100)
+            .forEach(p -> p.sendMessage(Text.of(String.format("§a玩家 %s 创建了新的贡献点：%s", 
+                player.getName().getString(), contribution.getName()))));
     }
 } 

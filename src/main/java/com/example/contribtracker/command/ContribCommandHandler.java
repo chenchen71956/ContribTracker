@@ -1,8 +1,8 @@
-package cn.kongchengli.cn.contribtracker.command;
+package com.example.contribtracker.command;
 
-import cn.kongchengli.cn.contribtracker.database.DatabaseManager;
-import cn.kongchengli.cn.contribtracker.database.Contribution;
-import cn.kongchengli.cn.contribtracker.database.ContributorInfo;
+import com.example.contribtracker.database.DatabaseManager;
+import com.example.contribtracker.database.Contribution;
+import com.example.contribtracker.database.ContributorInfo;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -33,7 +33,7 @@ public class ContribCommandHandler {
             }
             
             // 获取所有贡献者信息
-            List<ContributorInfo> contributors = DatabaseManager.getContributorsByContributionId(contributionId);
+            List<ContributorInfo> contributors = com.example.contribtracker.database.DatabaseManager.getContributorsByContributionId(contributionId);
             if (contributors.isEmpty()) {
                 source.sendMessage(Text.of("§c该贡献暂无贡献者"));
                 return 0;

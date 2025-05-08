@@ -1,4 +1,4 @@
-package cn.kongchengli.cn.contribtracker.websocket;
+package com.example.contribtracker.websocket;
 
 public class WebSocketMessage {
     private String type;

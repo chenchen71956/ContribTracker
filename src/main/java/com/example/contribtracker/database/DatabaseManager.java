@@ -1,4 +1,4 @@
-package cn.kongchengli.contribtracker.database;
+package com.example.contribtracker.database;
 
 import java.sql.*;
 import java.util.ArrayList;
@@ -49,6 +49,13 @@ public class DatabaseManager {
         }
     }
 
+    private static Connection getConnection() throws SQLException {
+        if (connection == null || connection.isClosed()) {
+            connection = DriverManager.getConnection(DB_URL);
+        }
+        return connection;
+    }
+
     public static void addContribution(String name, String type, String gameId, 
                                      double x, double y, double z, String world,
                                      UUID creatorUuid) throws SQLException {
@@ -57,7 +64,7 @@ public class DatabaseManager {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             pstmt.setString(1, name);
             pstmt.setString(2, type);
             pstmt.setString(3, gameId);
@@ -118,18 +125,7 @@ public class DatabaseManager {
             try (ResultSet rs = pstmt.executeQuery()) {
                 while (rs.next()) {
                     Contribution contribution = new Contribution();
-                    contribution.setId(rs.getInt("id"));
-                    contribution.setName(rs.getString("name"));
-                    contribution.setType(rs.getString("type"));
-                    contribution.setGameId(rs.getString("game_id"));
-                    contribution.setX(rs.getDouble("x"));
-                    contribution.setY(rs.getDouble("y"));
-                    contribution.setZ(rs.getDouble("z"));
-                    contribution.setWorld(rs.getString("world"));
-                    contribution.setCreatedAt(rs.getTimestamp("created_at"));
-                    contribution.setContributors(rs.getString("contributors"));
-                    contribution.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
-                    contribution.setCreatorName(rs.getString("creator_name"));
+                    setContributionFromResultSet(contribution, rs);
                     contributions.add(contribution);
                 }
             }
@@ -170,18 +166,7 @@ public class DatabaseManager {
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
                     Contribution contribution = new Contribution();
-                    contribution.setId(rs.getInt("id"));
-                    contribution.setName(rs.getString("name"));
-                    contribution.setType(rs.getString("type"));
-                    contribution.setGameId(rs.getString("game_id"));
-                    contribution.setX(rs.getDouble("x"));
-                    contribution.setY(rs.getDouble("y"));
-                    contribution.setZ(rs.getDouble("z"));
-                    contribution.setWorld(rs.getString("world"));
-                    contribution.setCreatedAt(rs.getTimestamp("created_at"));
-                    contribution.setContributors(rs.getString("contributors"));
-                    contribution.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
-                    contribution.setCreatorName(rs.getString("creator_name"));
+                    setContributionFromResultSet(contribution, rs);
                     return contribution;
                 }
             }
@@ -374,18 +359,7 @@ public class DatabaseManager {
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 Contribution contribution = new Contribution();
-                contribution.setId(rs.getInt("id"));
-                contribution.setName(rs.getString("name"));
-                contribution.setType(rs.getString("type"));
-                contribution.setGameId(rs.getString("game_id"));
-                contribution.setX(rs.getDouble("x"));
-                contribution.setY(rs.getDouble("y"));
-                contribution.setZ(rs.getDouble("z"));
-                contribution.setWorld(rs.getString("world"));
-                contribution.setCreatedAt(rs.getTimestamp("created_at"));
-                contribution.setContributors(rs.getString("contributors"));
-                contribution.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
-                contribution.setCreatorName(rs.getString("creator_name"));
+                setContributionFromResultSet(contribution, rs);
                 contributions.add(contribution);
             }
         }
@@ -418,5 +392,53 @@ public class DatabaseManager {
         if (connection != null) {
             connection.close();
         }
+    }
+
+    public static boolean isContributor(int contributionId, UUID playerUuid) {
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                 "SELECT 1 FROM contributors WHERE contribution_id = ? AND player_uuid = ?")) {
+            stmt.setInt(1, contributionId);
+            stmt.setString(2, playerUuid.toString());
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public static Contribution getContributionByName(String name) {
+        try (Connection conn = getConnection();
+             PreparedStatement stmt = conn.prepareStatement(
+                 "SELECT * FROM contributions WHERE name = ?")) {
+            stmt.setString(1, name);
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    Contribution contribution = new Contribution();
+                    setContributionFromResultSet(contribution, rs);
+                    return contribution;
+                }
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    private static void setContributionFromResultSet(Contribution contribution, ResultSet rs) throws SQLException {
+        contribution.setId(rs.getInt("id"));
+        contribution.setName(rs.getString("name"));
+        contribution.setType(rs.getString("type"));
+        contribution.setGameId(rs.getString("game_id"));
+        contribution.setX(rs.getDouble("x"));
+        contribution.setY(rs.getDouble("y"));
+        contribution.setZ(rs.getDouble("z"));
+        contribution.setWorld(rs.getString("world"));
+        contribution.setCreatedAt(rs.getTimestamp("created_at").getTime());
+        contribution.setContributors(rs.getString("contributors"));
+        contribution.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
+        contribution.setCreatorName(rs.getString("creator_name"));
     }
 } 

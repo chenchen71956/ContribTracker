@@ -1,8 +1,9 @@
-package cn.kongchengli.contribtracker.database;
+package com.example.contribtracker.database;
 
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
+import java.util.ArrayList;
 
 public class Contribution {
     private int id;
@@ -14,8 +15,16 @@ public class Contribution {
     private double y;
     private double z;
     private String world;
-    private Timestamp createdAt;
+    private long createdAt;
+    private String dimension;
+    private String gameId;
+    private String contributors;
+    private UUID inviterUuid;
     private List<ContributorInfo> contributorList;
+
+    public Contribution() {
+        this.contributorList = new ArrayList<>();
+    }
 
     // Getters and Setters
     public int getId() {
@@ -90,12 +99,44 @@ public class Contribution {
         this.world = world;
     }
 
-    public Timestamp getCreatedAt() {
+    public long getCreatedAt() {
         return createdAt;
     }
 
-    public void setCreatedAt(Timestamp createdAt) {
+    public void setCreatedAt(long createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public String getDimension() {
+        return dimension;
+    }
+
+    public void setDimension(String dimension) {
+        this.dimension = dimension;
+    }
+
+    public String getGameId() {
+        return gameId;
+    }
+
+    public void setGameId(String gameId) {
+        this.gameId = gameId;
+    }
+
+    public String getContributors() {
+        return contributors;
+    }
+
+    public void setContributors(String contributors) {
+        this.contributors = contributors;
+    }
+
+    public UUID getInviterUuid() {
+        return inviterUuid;
+    }
+
+    public void setInviterUuid(UUID inviterUuid) {
+        this.inviterUuid = inviterUuid;
     }
 
     public List<ContributorInfo> getContributorList() {

@@ -1,4 +1,4 @@
-package cn.kongchengli.cn.contribtracker.database;
+package com.example.contribtracker.database;
 
 import java.util.UUID;
 
