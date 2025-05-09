@@ -67,13 +67,17 @@ public class AddCommand implements BaseCommand {
      */
     private ArgumentBuilder<ServerCommandSource, ?> createPlayerArgument(int index, boolean needContributionId) {
         String argName = "player" + index;
-        return CommandManager.argument(argName, StringArgumentType.word())
-            .suggests((context, builder) -> {
+        
+        // 设置最大递归深度，最多添加10个玩家
+        final int MAX_PLAYERS = 10;
+        
+        ArgumentBuilder<ServerCommandSource, ?> builder = CommandManager.argument(argName, StringArgumentType.word())
+            .suggests((context, suggestionsBuilder) -> {
                 ServerCommandSource source = context.getSource();
                 for (ServerPlayerEntity player : source.getServer().getPlayerManager().getPlayerList()) {
-                    builder.suggest(player.getName().getString());
+                    suggestionsBuilder.suggest(player.getName().getString());
                 }
-                return builder.buildFuture();
+                return suggestionsBuilder.buildFuture();
             })
             .executes(context -> {
                 if (needContributionId) {
@@ -81,9 +85,14 @@ public class AddCommand implements BaseCommand {
                 } else {
                     return processContributors(context, index);
                 }
-            })
-            // 支持添加下一个玩家
-            .then(createPlayerArgument(index + 1, needContributionId));
+            });
+        
+        // 只有当索引小于最大限制时，才继续递归添加下一个玩家参数
+        if (index < MAX_PLAYERS) {
+            builder = builder.then(createPlayerArgument(index + 1, needContributionId));
+        }
+        
+        return builder;
     }
 
     /**

@@ -8,6 +8,7 @@ import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,10 +37,20 @@ public class ListCommand implements BaseCommand {
      */
     private int listContributions(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
         ServerCommandSource source = context.getSource();
+        ServerPlayerEntity player = source.getPlayer();
+        
+        // 添加调试信息
+        if (player != null) {
+            ContribTrackerMod.debug("玩家 " + player.getName().getString() + " 执行了list命令");
+        } else {
+            ContribTrackerMod.debug("控制台执行了list命令");
+        }
 
         try {
             // 获取所有贡献
+            ContribTrackerMod.debug("正在获取所有贡献记录...");
             List<Contribution> contributions = DatabaseManager.getAllContributions();
+            ContribTrackerMod.debug("成功获取到 " + contributions.size() + " 条贡献记录");
 
             if (contributions.isEmpty()) {
                 source.sendMessage(Text.of("§c目前还没有任何贡献记录"));
@@ -58,6 +69,8 @@ public class ListCommand implements BaseCommand {
                     contribution.getY(), 
                     contribution.getZ()
                 );
+                
+                ContribTrackerMod.debug("处理贡献记录: ID=" + contribution.getId() + ", Name=" + contribution.getName());
 
                 source.sendMessage(Text.of(String.format(
                     "§a%d §7| §f%s §7| §f%s §7| §f%s §7| §f%s", 
@@ -71,10 +84,13 @@ public class ListCommand implements BaseCommand {
 
             source.sendMessage(Text.of("§a=============================="));
             source.sendMessage(Text.of("§7共显示 " + contributions.size() + " 条贡献记录"));
+            
+            ContribTrackerMod.debug("list命令执行完成，显示了 " + contributions.size() + " 条记录");
 
             return 1;
         } catch (SQLException e) {
             LOGGER.error("获取贡献列表失败", e);
+            ContribTrackerMod.debug("list命令执行失败: " + e.getMessage());
             source.sendMessage(Text.of("§c获取贡献列表失败：" + e.getMessage()));
             return 0;
         }

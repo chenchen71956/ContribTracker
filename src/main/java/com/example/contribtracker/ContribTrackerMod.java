@@ -21,6 +21,7 @@ public class ContribTrackerMod implements ModInitializer {
     private static Map<UUID, Contribution> pendingContributions = new HashMap<>();
     private static Map<UUID, Long> contributionExpiryTimes = new HashMap<>();
     private static final long INVITATION_EXPIRY_TIME = 5 * 60 * 1000;
+    private static boolean isDebugMode = false; // 调试模式标志，默认关闭
 
     @Override
     public void onInitialize() {
@@ -77,5 +78,33 @@ public class ContribTrackerMod implements ModInitializer {
     
     public static Map<UUID, Long> getContributionExpiryTimes() {
         return contributionExpiryTimes;
+    }
+    
+    /**
+     * 获取当前调试模式状态
+     * @return 当前调试模式是否开启
+     */
+    public static boolean isDebugMode() {
+        return isDebugMode;
+    }
+    
+    /**
+     * 设置调试模式状态
+     * @param debugMode 是否开启调试模式
+     */
+    public static void setDebugMode(boolean debugMode) {
+        isDebugMode = debugMode;
+        LOGGER.info("调试模式已" + (debugMode ? "开启" : "关闭"));
+    }
+    
+    /**
+     * 输出调试信息
+     * 仅在调试模式开启时输出
+     * @param message 调试信息
+     */
+    public static void debug(String message) {
+        if (isDebugMode) {
+            LOGGER.info("[DEBUG] " + message);
+        }
     }
 } 

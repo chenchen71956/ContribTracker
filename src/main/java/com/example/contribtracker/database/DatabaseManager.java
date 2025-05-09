@@ -483,4 +483,54 @@ public class DatabaseManager {
         
         return contributions;
     }
+
+    /**
+     * 检查玩家是否是贡献的创建者
+     * @param contributionId 贡献ID
+     * @param playerUuid 玩家UUID
+     * @return true如果玩家是贡献的创建者，否则返回false
+     */
+    public static boolean isContributionCreator(int contributionId, UUID playerUuid) throws SQLException {
+        String sql = """
+            SELECT 1
+            FROM contributions
+            WHERE id = ? AND creator_uuid = ?
+        """;
+        
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            pstmt.setString(2, playerUuid.toString());
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                return rs.next(); // 如果有记录，则玩家是创建者
+            }
+        }
+    }
+
+    /**
+     * 根据玩家名称和贡献ID获取玩家UUID
+     * @param playerName 玩家名称
+     * @param contributionId 贡献ID
+     * @return 如果找到，返回玩家UUID，否则返回null
+     */
+    public static UUID getPlayerUuidByName(String playerName, int contributionId) throws SQLException {
+        String sql = """
+            SELECT player_uuid
+            FROM contributors
+            WHERE contribution_id = ? AND player_name = ?
+        """;
+        
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+            pstmt.setInt(1, contributionId);
+            pstmt.setString(2, playerName);
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    String uuidStr = rs.getString("player_uuid");
+                    return UUID.fromString(uuidStr);
+                }
+            }
+        }
+        return null;
+    }
 } 

@@ -20,6 +20,7 @@ public class Contribution {
     private String gameId;
     private String contributors;
     private UUID inviterUuid;
+    private int inviterLevel;
     private List<ContributorInfo> contributorList;
 
     public Contribution() {
@@ -137,6 +138,14 @@ public class Contribution {
 
     public void setInviterUuid(UUID inviterUuid) {
         this.inviterUuid = inviterUuid;
+    }
+
+    public int getInviterLevel() {
+        return inviterLevel;
+    }
+
+    public void setInviterLevel(int inviterLevel) {
+        this.inviterLevel = inviterLevel;
     }
 
     public List<ContributorInfo> getContributorList() {

@@ -25,6 +25,7 @@ public class CommandManager {
         commands.add(new DeleteCommand());
         commands.add(new RemoveCommand());
         commands.add(new NearCommand());
+        commands.add(new DebugCommand());
         // 将来可以添加更多命令
 
         // 注册所有命令
