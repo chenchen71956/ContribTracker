@@ -15,7 +15,7 @@ public class DatabaseManager {
     public static void initialize() throws SQLException {
         try {
             // 显式加载SQLite JDBC驱动（使用重定向后的类名）
-            Class.forName("org.sqlite.JDBC");
+            Class.forName("com.example.contribtracker.shadow.org.sqlite.JDBC");
             LOGGER.info("成功加载SQLite JDBC驱动");
         } catch (ClassNotFoundException e) {
             throw new SQLException("无法加载SQLite JDBC驱动: " + e.getMessage(), e);
@@ -450,5 +450,37 @@ public class DatabaseManager {
         contribution.setContributors(rs.getString("contributors"));
         contribution.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
         contribution.setCreatorName(rs.getString("creator_name"));
+    }
+
+    /**
+     * 获取指定创建者的所有贡献，按创建时间倒序排列
+     * @param creatorUuid 创建者UUID
+     * @return 贡献列表
+     */
+    public static List<Contribution> getAllContributionsByCreator(UUID creatorUuid) throws SQLException {
+        List<Contribution> contributions = new ArrayList<>();
+        String sql = """
+            SELECT c.*, GROUP_CONCAT(ct.player_name) as contributors,
+                   (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name
+            FROM contributions c
+            LEFT JOIN contributors ct ON c.id = ct.contribution_id
+            WHERE c.creator_uuid = ?
+            GROUP BY c.id
+            ORDER BY c.created_at DESC
+        """;
+        
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, creatorUuid.toString());
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    Contribution contribution = new Contribution();
+                    setContributionFromResultSet(contribution, rs);
+                    contributions.add(contribution);
+                }
+            }
+        }
+        
+        return contributions;
     }
 } 

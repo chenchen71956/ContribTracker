@@ -2,6 +2,18 @@
 
 一个用于追踪玩家贡献的Minecraft Fabric服务器模组。
 
+## 最新更新
+
+### 2023-06-15
+
+- 修复了SQLite JDBC驱动加载问题：
+  - 将驱动类名从`org.sqlite.JDBC`改为`com.example.contribtracker.shadow.org.sqlite.JDBC`
+  - 使用shadowJar插件，只打包SQLite驱动而非所有依赖
+  - 优化了依赖管理
+- 暂时禁用了WebSocket功能以减少依赖
+- 完善了命令系统架构
+- 实现了多级贡献者权限管理
+
 ## 功能特点
 
 - 支持离线玩家贡献记录
@@ -131,16 +143,10 @@
    - 可以邀请新成员
    - 只能删除自己邀请的贡献者
 
-## HTTP API
-
-模组提供了HTTP接口用于获取贡献者信息：
-
-- `GET /api/contributors` - 获取所有贡献者列表
-- `GET /api/contributions` - 获取所有贡献列表
-- `GET /api/contributions/:playerId` - 获取指定玩家的贡献列表
-- `GET /api/contributions/details/:contributionId` - 获取指定贡献的详细信息
-
 ## WebSocket API
+
+> **注意：在当前版本中，WebSocket功能已被临时禁用以减少依赖。**
+> **计划在未来版本中重新启用此功能。如需启用，请在build.gradle中调整依赖配置。**
 
 模组提供了WebSocket接口用于实时获取贡献者信息：
 

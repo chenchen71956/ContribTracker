@@ -127,6 +127,10 @@ shadowJar {
 
     // 正确使用 relocate
     relocate 'org.sqlite', 'com.example.contribtracker.shadow.org.sqlite'
+    
+    // 只包含SQLite相关的类
+    include 'org/sqlite/**'
+    include 'com/example/contribtracker/shadow/org/sqlite/**'
 }
 
 configurations {
