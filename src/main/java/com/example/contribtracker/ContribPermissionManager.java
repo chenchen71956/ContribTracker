@@ -106,7 +106,12 @@ public class ContribPermissionManager {
         }
     }
     
-    private static boolean isAdmin(PlayerEntity player) {
+    /**
+     * 检查玩家是否是管理员
+     * @param player 玩家
+     * @return true如果玩家是管理员
+     */
+    public static boolean isAdmin(PlayerEntity player) {
         // TODO: 实现管理员检查逻辑
         return false;
     }

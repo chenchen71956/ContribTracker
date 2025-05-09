@@ -22,7 +22,7 @@ public class CommandManager {
         // 添加所有命令
         commands.add(new AddCommand());
         // commands.add(new ListCommand());
-        // commands.add(new DeleteCommand());
+        commands.add(new DeleteCommand());
         // 将来可以添加更多命令
 
         // 注册所有命令
