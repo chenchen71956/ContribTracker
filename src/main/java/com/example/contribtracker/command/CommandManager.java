@@ -23,6 +23,8 @@ public class CommandManager {
         commands.add(new AddCommand());
         commands.add(new ListCommand());
         commands.add(new DeleteCommand());
+        commands.add(new RemoveCommand());
+        commands.add(new NearCommand());
         // 将来可以添加更多命令
 
         // 注册所有命令
