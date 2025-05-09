@@ -11,10 +11,10 @@
   "environment": "server",
   "entrypoints": {
     "fabric-datagen": [
-      "cn.kongchengli.contribtracker.client.ContribtrackerDataGenerator"
+      "com.example.contribtracker.client.ContribtrackerDataGenerator"
     ],
     "main": [
-      "cn.kongchengli.contribtracker.Contribtracker"
+      "com.example.contribtracker.ContribTrackerMod"
     ]
   },
   "mixins": [

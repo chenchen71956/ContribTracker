@@ -4,12 +4,22 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class DatabaseManager {
     private static final String DB_URL = "jdbc:sqlite:contributions.db";
     private static Connection connection;
+    private static final Logger LOGGER = LoggerFactory.getLogger("contribtracker");
 
     public static void initialize() throws SQLException {
+        try {
+            // 显式加载SQLite JDBC驱动（使用重定向后的类名）
+            Class.forName("org.sqlite.JDBC");
+            LOGGER.info("成功加载SQLite JDBC驱动");
+        } catch (ClassNotFoundException e) {
+            throw new SQLException("无法加载SQLite JDBC驱动: " + e.getMessage(), e);
+        }
         connection = DriverManager.getConnection(DB_URL);
         createTables();
     }

@@ -12,7 +12,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import io.javalin.Javalin;
+// import io.javalin.Javalin; // 暂时禁用
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.example.contribtracker.database.DatabaseManager;
@@ -29,14 +29,14 @@ import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.util.Formatting;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
-import com.example.contribtracker.websocket.WebSocketHandler;
+// import com.example.contribtracker.websocket.WebSocketHandler; // 暂时禁用
 import com.example.contribtracker.command.ContribCommandHandler;
 import com.example.contribtracker.database.ContributorInfo;
 
 public class ContribTrackerMod implements ModInitializer {
     public static final String MOD_ID = "contribtracker";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
-    private static Javalin app;
+    // private static Javalin app; // 暂时禁用
     private static MinecraftServer server;
     private static Map<UUID, Contribution> pendingContributions = new HashMap<>();
     private static Map<UUID, Long> contributionExpiryTimes = new HashMap<>();
@@ -53,8 +53,9 @@ public class ContribTrackerMod implements ModInitializer {
             return;
         }
         
-        // 设置WebSocket服务器
-        setupWebSocketServer();
+        // 暂时禁用WebSocket服务器
+        // setupWebSocketServer();
+        LOGGER.info("WebSocket服务器功能暂时禁用");
         
         // 注册服务器启动和停止事件
         ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
@@ -79,39 +80,44 @@ public class ContribTrackerMod implements ModInitializer {
         registerEventListeners();
     }
 
+    /* 暂时禁用WebSocket服务器
     private void setupWebSocketServer() {
-        Javalin app = Javalin.create(config -> {
+        app = Javalin.create(config -> {
             config.plugins.enableCors(cors -> {
                 cors.add(it -> it.anyHost());
             });
         });
-
+        
         // WebSocket端点
         app.ws("/ws", ws -> {
             ws.onConnect(WebSocketHandler::onConnect);
             ws.onClose(WebSocketHandler::onClose);
             ws.onMessage(WebSocketHandler::onMessage);
         });
-
+        
         // 启动服务器
         app.start(25566);
         LOGGER.info("WebSocket服务器已启动在端口 25566");
     }
+    */
 
     private void onServerStarting(MinecraftServer server) {
         ContribTrackerMod.server = server;
-        app.start(8080);
-        LOGGER.info("HTTP服务器已启动在端口8080");
+        LOGGER.info("服务器已启动");
     }
 
     private void onServerStopping(MinecraftServer server) {
-        app.stop();
+        /* 暂时禁用WebSocket服务器
+        if (app != null) {
+            app.stop();
+        }
+        */
         try {
             DatabaseManager.close();
         } catch (SQLException e) {
             LOGGER.error("关闭数据库连接失败", e);
         }
-        LOGGER.info("HTTP服务器已停止");
+        LOGGER.info("服务器已停止");
     }
 
     private void registerCommands() {
@@ -123,28 +129,28 @@ public class ContribTrackerMod implements ModInitializer {
                             .executes(context -> executeContribCommand(context, null, null))
                             .then(CommandManager.argument("gameId", StringArgumentType.string()))
                                 .then(CommandManager.argument("note", StringArgumentType.string())
-                                    .executes(context -> executeContribCommand(context,
+                                    .executes(context -> executeContribCommand(context, 
                                         StringArgumentType.getString(context, "gameId"),
                                         StringArgumentType.getString(context, "note"))))
-                            .then(CommandManager.argument("gameId2", StringArgumentType.string())
-                                .then(CommandManager.argument("note2", StringArgumentType.string())
-                                    .executes(context -> executeContribCommand(context,
-                                        StringArgumentType.getString(context, "gameId2"),
+                                .then(CommandManager.argument("gameId2", StringArgumentType.string())
+                                    .then(CommandManager.argument("note2", StringArgumentType.string())
+                                        .executes(context -> executeContribCommand(context, 
+                                            StringArgumentType.getString(context, "gameId2"),
                                         StringArgumentType.getString(context, "note2"))))
-                            .then(CommandManager.argument("gameId3", StringArgumentType.string())
-                                .then(CommandManager.argument("note3", StringArgumentType.string())
-                                    .executes(context -> executeContribCommand(context,
-                                        StringArgumentType.getString(context, "gameId3"),
-                                        StringArgumentType.getString(context, "note3"))))
-                            .then(CommandManager.argument("gameId4", StringArgumentType.string())
-                                .then(CommandManager.argument("note4", StringArgumentType.string())
-                                    .executes(context -> executeContribCommand(context,
-                                        StringArgumentType.getString(context, "gameId4"),
-                                        StringArgumentType.getString(context, "note4"))))
-                            .then(CommandManager.argument("gameId5", StringArgumentType.string())
-                                .then(CommandManager.argument("note5", StringArgumentType.string())
-                                    .executes(context -> executeContribCommand(context,
-                                        StringArgumentType.getString(context, "gameId5"),
+                                    .then(CommandManager.argument("gameId3", StringArgumentType.string())
+                                        .then(CommandManager.argument("note3", StringArgumentType.string())
+                                            .executes(context -> executeContribCommand(context, 
+                                                StringArgumentType.getString(context, "gameId3"),
+                                                StringArgumentType.getString(context, "note3"))))
+                                    .then(CommandManager.argument("gameId4", StringArgumentType.string())
+                                        .then(CommandManager.argument("note4", StringArgumentType.string())
+                                            .executes(context -> executeContribCommand(context, 
+                                                StringArgumentType.getString(context, "gameId4"),
+                                                StringArgumentType.getString(context, "note4"))))
+                                    .then(CommandManager.argument("gameId5", StringArgumentType.string())
+                                        .then(CommandManager.argument("note5", StringArgumentType.string())
+                                            .executes(context -> executeContribCommand(context, 
+                                                StringArgumentType.getString(context, "gameId5"),
                                         StringArgumentType.getString(context, "note5"))))))))
                 .then(CommandManager.literal("n")
                     .executes(this::listNearbyContribs))
@@ -227,7 +233,7 @@ public class ContribTrackerMod implements ModInitializer {
             // 获取贡献对象
             Contribution contribution = DatabaseManager.getContributionById(contributionId);
             if (contribution != null) {
-                // 通知附近玩家
+            // 通知附近玩家
                 notifyNearbyPlayers(player, contribution);
             }
 

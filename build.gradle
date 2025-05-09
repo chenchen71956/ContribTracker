@@ -1,6 +1,7 @@
 plugins {
     id 'fabric-loom' version '1.10.5'
     id 'maven-publish'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
 }
 
 version = project.mod_version
@@ -46,15 +47,13 @@ dependencies {
 
     modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
     
-    // Javalin WebSocket
-    implementation 'io.javalin:javalin:5.6.3'
-    implementation 'org.slf4j:slf4j-simple:2.0.9'
+    // 不打包进JAR的依赖
+    modCompileOnly 'io.javalin:javalin:5.6.3'
+    modCompileOnly 'org.slf4j:slf4j-simple:2.0.9'
+    modCompileOnly 'com.google.code.gson:gson:2.10.1'
     
-    // Gson for JSON
-    implementation 'com.google.code.gson:gson:2.10.1'
-    
-    // SQLite JDBC
-    implementation 'org.xerial:sqlite-jdbc:3.45.1.0'
+    // 只打包SQLite驱动到JAR中
+    include 'org.xerial:sqlite-jdbc:3.45.1.0'
 }
 
 processResources {
@@ -119,4 +118,21 @@ publishing {
         // The repositories here will be used for publishing your artifact, not for
         // retrieving dependencies.
     }
+}
+
+
+shadowJar {
+    archiveClassifier.set('')
+    configurations = [project.configurations.shadow]
+
+    // 正确使用 relocate
+    relocate 'org.sqlite', 'com.example.contribtracker.shadow.org.sqlite'
+}
+
+configurations {
+    shadow
+}
+
+dependencies {
+    shadow 'org.xerial:sqlite-jdbc:3.45.1.0'
 }
