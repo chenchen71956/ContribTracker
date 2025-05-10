@@ -4,25 +4,12 @@ import com.example.contribtracker.database.Contribution;
 import com.example.contribtracker.database.DatabaseManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import java.util.UUID;
-import java.util.Arrays;
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class ContribPermissionManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ContribTrackerMod.MOD_ID);
 
-    // 管理员UUID列表，可以在代码中硬编码，也可以从配置文件加载
-    private static final List<UUID> ADMIN_UUIDS = Arrays.asList(
-        // 这里可以添加管理员的UUID
-        // 例如: UUID.fromString("00000000-0000-0000-0000-000000000000")
-        UUID.fromString("a98ea164-344b-4211-9684-b65d1dfb74e7")
-    );
-    
-    // 管理员玩家名列表，可以在代码中硬编码，也可以从配置文件加载
-    private static final List<String> ADMIN_NAMES = Arrays.asList(
-    );
-    
     /**
      * 检查玩家是否有权限删除贡献
      * @param player 执行删除的玩家
@@ -138,41 +125,12 @@ public class ContribPermissionManager {
             return true;
         }
 
-        // 检查UUID是否在管理员列表中
-        UUID playerUuid = player.getUuid();
-        if (isAdminUuid(playerUuid)) {
-            return true;
-        }
-
-        // 检查玩家名是否在管理员名单中
-        String playerName = player.getName().getString();
-        if (isAdminName(playerName)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * 检查UUID是否是管理员
-     * @param uuid 要检查的UUID
-     * @return 是否是管理员
-     */
-    public static boolean isAdminUuid(UUID uuid) {
-        return ADMIN_UUIDS.contains(uuid);
-    }
-
-    /**
-     * 检查玩家名是否是管理员
-     * @param playerName 要检查的玩家名
-     * @return 是否是管理员
-     */
-    public static boolean isAdminName(String playerName) {
         // 开发环境中，以'Dev'开头的玩家名视为管理员
+        String playerName = player.getName().getString();
         if (playerName.startsWith("Dev")) {
             return true;
         }
 
-        return ADMIN_NAMES.contains(playerName);
+        return false;
     }
 } 

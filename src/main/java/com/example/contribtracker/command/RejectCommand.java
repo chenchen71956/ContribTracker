@@ -37,7 +37,6 @@ public class RejectCommand implements BaseCommand {
         int contributionId = IntegerArgumentType.getInteger(context, "contributionId");
         UUID playerUuid = player.getUuid();
 
-        // 检查是否有待处理的邀请
         Map<UUID, Contribution> pendingContributions = ContribTrackerMod.getPendingContributions();
         Contribution contribution = pendingContributions.get(playerUuid);
 
@@ -46,7 +45,6 @@ public class RejectCommand implements BaseCommand {
             return 0;
         }
 
-        // 移除待处理的邀请
         pendingContributions.remove(playerUuid);
         ContribTrackerMod.getContributionExpiryTimes().remove(playerUuid);
 

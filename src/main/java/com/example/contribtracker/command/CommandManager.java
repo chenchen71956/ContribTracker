@@ -39,7 +39,6 @@ public class CommandManager {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             for (BaseCommand command : commands) {
                 dispatcher.register(command.register());
-                LOGGER.info("注册命令: " + command.getClass().getSimpleName());
             }
         });
     }

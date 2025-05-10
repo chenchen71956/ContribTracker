@@ -67,20 +67,17 @@ public class RemoveCommand implements BaseCommand {
         String targetPlayerName = StringArgumentType.getString(context, "playerName");
 
         try {
-            // 检查贡献是否存在
             Contribution contribution = DatabaseManager.getContributionById(contributionId);
             if (contribution == null) {
                 source.sendMessage(Text.of("§c找不到ID为 " + contributionId + " 的贡献"));
                 return 0;
             }
 
-            // 获取目标玩家UUID
             UUID targetUuid = null;
             ServerPlayerEntity targetPlayer = source.getServer().getPlayerManager().getPlayer(targetPlayerName);
             if (targetPlayer != null) {
                 targetUuid = targetPlayer.getUuid();
             } else {
-                // 尝试从离线玩家中查找
                 targetUuid = DatabaseManager.getPlayerUuidByName(targetPlayerName, contributionId);
                 if (targetUuid == null) {
                     source.sendMessage(Text.of("§c找不到玩家：" + targetPlayerName));
@@ -88,32 +85,26 @@ public class RemoveCommand implements BaseCommand {
                 }
             }
 
-            // 检查目标是否是贡献者
             ContributorInfo targetInfo = DatabaseManager.getContributorInfo(contributionId, targetUuid);
             if (targetInfo == null) {
                 source.sendMessage(Text.of("§c玩家 " + targetPlayerName + " 不是该贡献的贡献者"));
                 return 0;
             }
 
-            // 检查操作者权限
             boolean canRemove = false;
             
-            // 管理员可以删除任何人
             if (ContribPermissionManager.isAdmin(player)) {
                 canRemove = true;
             } 
-            // 贡献创建者可以删除任何人
             else if (DatabaseManager.isContributionCreator(contributionId, player.getUuid())) {
                 canRemove = true;
             }
-            // 一级贡献者可以删除任何人
             else {
                 ContributorInfo removerInfo = DatabaseManager.getContributorInfo(contributionId, player.getUuid());
                 if (removerInfo != null) {
                     if (removerInfo.getLevel() == 1) {
                         canRemove = true;
                     } 
-                    // 二级及以下贡献者只能删除自己邀请的玩家
                     else if (targetInfo.getInviterUuid() != null && targetInfo.getInviterUuid().equals(player.getUuid())) {
                         canRemove = true;
                     }
@@ -124,12 +115,9 @@ public class RemoveCommand implements BaseCommand {
                 source.sendMessage(Text.of("§c你没有权限删除该贡献者"));
                 return 0;
             }
-
-            // 执行删除
             DatabaseManager.deleteContributor(contributionId, targetUuid);
             source.sendMessage(Text.of("§a已从贡献中移除玩家：" + targetPlayerName));
 
-            // 通知被删除的玩家
             if (targetPlayer != null) {
                 targetPlayer.sendMessage(Text.of("§c你已被从贡献 ID:" + contributionId + " 中移除"));
             }

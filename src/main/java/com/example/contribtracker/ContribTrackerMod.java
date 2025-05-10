@@ -24,9 +24,6 @@ public class ContribTrackerMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("正在初始化 ContribTracker 模组...");
-        
-        // 初始化数据库
         try {
             DatabaseManager.initialize();
             LOGGER.info("数据库初始化成功");
@@ -34,18 +31,10 @@ public class ContribTrackerMod implements ModInitializer {
             LOGGER.error("数据库初始化失败", e);
             return;
         }
-        
-        // 注册命令
         CommandManager.registerCommands();
-        LOGGER.info("命令注册完成");
-
         LOGGER.info("ContribTracker 模组初始化完成");
-        
-        // 注册服务器启动和停止事件
         ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
         ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
-        
-        // 添加定时任务检查过期邀请
         ServerTickEvents.START_SERVER_TICK.register(server -> {
             long currentTime = System.currentTimeMillis();
             contributionExpiryTimes.entrySet().removeIf(entry -> {
@@ -60,16 +49,13 @@ public class ContribTrackerMod implements ModInitializer {
 
     private void onServerStarting(MinecraftServer server) {
         ContribTrackerMod.server = server;
-        LOGGER.info("服务器已启动");
     }
 
     private void onServerStopping(MinecraftServer server) {
         try {
             DatabaseManager.close();
         } catch (SQLException e) {
-            LOGGER.error("关闭数据库连接失败", e);
         }
-        LOGGER.info("服务器已停止");
     }
 
     public static MinecraftServer getServer() {

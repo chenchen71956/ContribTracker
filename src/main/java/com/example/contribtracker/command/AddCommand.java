@@ -59,17 +59,6 @@ public class AddCommand implements BaseCommand {
                 .then(CommandManager.literal(type)
                     .then(CommandManager.argument("name", StringArgumentType.greedyString())
                         .executes(context -> createContributionWithType(context, type))
-                        // 添加创建时直接添加玩家的支持
-                        .then(CommandManager.argument("player", StringArgumentType.word())
-                            .suggests((context, suggestionsBuilder) -> {
-                                ServerCommandSource source = context.getSource();
-                                for (ServerPlayerEntity player : source.getServer().getPlayerManager().getPlayerList()) {
-                                    suggestionsBuilder.suggest(player.getName().getString());
-                                }
-                                return suggestionsBuilder.buildFuture();
-                            })
-                            .executes(context -> createContributionWithTypeAndPlayer(context, type))
-                        )
                     )
                 )
             );
@@ -198,61 +187,6 @@ public class AddCommand implements BaseCommand {
             }
 
             source.sendMessage(Text.of("§a已创建新贡献（ID: " + contributionId + "，类型: " + type + "，名称: " + name + "）"));
-            return 1;
-        } catch (SQLException e) {
-            LOGGER.error("创建贡献失败", e);
-            source.sendMessage(Text.of("§c创建贡献失败：" + e.getMessage()));
-            return 0;
-        }
-    }
-
-    /**
-     * 创建带类型和玩家的贡献
-     */
-    private int createContributionWithTypeAndPlayer(CommandContext<ServerCommandSource> context, String type) throws CommandSyntaxException {
-        ServerCommandSource source = context.getSource();
-        ServerPlayerEntity player = source.getPlayer();
-        if (player == null) return 0;
-        
-        String name = StringArgumentType.getString(context, "name");
-        String targetPlayerName = StringArgumentType.getString(context, "player");
-        ServerPlayerEntity targetPlayer = source.getServer().getPlayerManager().getPlayer(targetPlayerName);
-
-        if (targetPlayer == null) {
-            source.sendMessage(Text.of("§c找不到玩家：" + targetPlayerName));
-            return 0;
-        }
-
-        try {
-            // 创建贡献
-            DatabaseManager.addContribution(
-                name,
-                type,
-                null,
-                player.getX(),
-                player.getY(),
-                player.getZ(),
-                player.getWorld().getRegistryKey().getValue().toString(),
-                player.getUuid()
-            );
-
-            int contributionId = DatabaseManager.getLastInsertId();
-
-            // 添加创建者作为贡献者（level 1）
-            DatabaseManager.addContributor(contributionId, player.getUuid(), player.getName().getString(), "", null);
-
-            // 直接添加目标玩家为贡献者
-            DatabaseManager.addContributor(contributionId, targetPlayer.getUuid(), targetPlayer.getName().getString(), "", player.getUuid());
-
-            // 获取贡献对象
-            Contribution contribution = DatabaseManager.getContributionById(contributionId);
-            if (contribution != null) {
-                // 通知附近玩家
-                notifyNearbyPlayers(player, contribution);
-            }
-
-            source.sendMessage(Text.of("§a已创建新贡献（ID: " + contributionId + "，类型: " + type + "，名称: " + name + "）并添加玩家 " + targetPlayerName));
-            targetPlayer.sendMessage(Text.of("§a你已被添加为贡献者"));
             return 1;
         } catch (SQLException e) {
             LOGGER.error("创建贡献失败", e);

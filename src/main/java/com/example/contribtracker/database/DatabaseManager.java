@@ -1,36 +1,33 @@
 package com.example.contribtracker.database;
 
+import com.example.contribtracker.ContribTrackerMod;
+import net.fabricmc.loader.api.FabricLoader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.File;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 public class DatabaseManager {
-    private static final String DB_URL = "jdbc:sqlite:contributions.db";
+    private static final Logger LOGGER = LoggerFactory.getLogger(ContribTrackerMod.MOD_ID);
     private static Connection connection;
-    private static final Logger LOGGER = LoggerFactory.getLogger("contribtracker");
+    private static final String DB_NAME = "contributions.db";
 
     public static void initialize() throws SQLException {
-        try {
-            // 显式加载SQLite JDBC驱动（使用原始类名）
-            Class.forName("org.sqlite.JDBC");
-            LOGGER.info("成功加载SQLite JDBC驱动");
-        } catch (ClassNotFoundException e) {
-            throw new SQLException("无法加载SQLite JDBC驱动: " + e.getMessage(), e);
+        File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "null_city/contributions");
+        if (!configDir.exists()) {
+            configDir.mkdirs();
         }
-        
-        // 确保能够获取连接，但不直接设置静态connection变量
-        getConnection();
-        LOGGER.info("成功连接到数据库: " + DB_URL);
-        
-        // 创建表
+        String dbPath = new File(configDir, DB_NAME).getAbsolutePath();
+        connection = DriverManager.getConnection("jdbc:sqlite:" + dbPath);
         createTables();
     }
 
     private static void createTables() throws SQLException {
-        try (Statement stmt = getConnection().createStatement()) {
+        try (Statement stmt = connection.createStatement()) {
             // 创建贡献表
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS contributions (
@@ -66,7 +63,7 @@ public class DatabaseManager {
 
     public static synchronized Connection getConnection() throws SQLException {
         if (connection == null || connection.isClosed()) {
-            connection = DriverManager.getConnection(DB_URL);
+            connection = DriverManager.getConnection("jdbc:sqlite:" + DB_NAME);
         }
         return connection;
     }

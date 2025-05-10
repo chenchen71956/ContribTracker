@@ -27,7 +27,6 @@ public class Contribution {
         this.contributorList = new ArrayList<>();
     }
 
-    // Getters and Setters
     public int getId() {
         return id;
     }
