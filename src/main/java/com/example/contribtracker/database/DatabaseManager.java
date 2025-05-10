@@ -14,18 +14,23 @@ public class DatabaseManager {
 
     public static void initialize() throws SQLException {
         try {
-            // 显式加载SQLite JDBC驱动（使用重定向后的类名）
-            Class.forName("com.example.contribtracker.shadow.org.sqlite.JDBC");
+            // 显式加载SQLite JDBC驱动（使用原始类名）
+            Class.forName("org.sqlite.JDBC");
             LOGGER.info("成功加载SQLite JDBC驱动");
         } catch (ClassNotFoundException e) {
             throw new SQLException("无法加载SQLite JDBC驱动: " + e.getMessage(), e);
         }
-        connection = DriverManager.getConnection(DB_URL);
+        
+        // 确保能够获取连接，但不直接设置静态connection变量
+        getConnection();
+        LOGGER.info("成功连接到数据库: " + DB_URL);
+        
+        // 创建表
         createTables();
     }
 
     private static void createTables() throws SQLException {
-        try (Statement stmt = connection.createStatement()) {
+        try (Statement stmt = getConnection().createStatement()) {
             // 创建贡献表
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS contributions (
@@ -59,7 +64,7 @@ public class DatabaseManager {
         }
     }
 
-    private static Connection getConnection() throws SQLException {
+    public static synchronized Connection getConnection() throws SQLException {
         if (connection == null || connection.isClosed()) {
             connection = DriverManager.getConnection(DB_URL);
         }
@@ -99,7 +104,7 @@ public class DatabaseManager {
             )
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             pstmt.setString(2, playerUuid.toString());
             pstmt.setString(3, playerName);
@@ -124,7 +129,7 @@ public class DatabaseManager {
             GROUP BY c.id
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setDouble(1, x);
             pstmt.setDouble(2, radius);
             pstmt.setDouble(3, y);
@@ -146,7 +151,7 @@ public class DatabaseManager {
 
     public static void deleteContribution(int contributionId) throws SQLException {
         String sql = "DELETE FROM contributions WHERE id = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             pstmt.executeUpdate();
         }
@@ -154,7 +159,7 @@ public class DatabaseManager {
 
     public static void deleteContributor(int contributionId, UUID playerUuid) throws SQLException {
         String sql = "DELETE FROM contributors WHERE contribution_id = ? AND player_uuid = ?";
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             pstmt.setString(2, playerUuid.toString());
             pstmt.executeUpdate();
@@ -171,7 +176,7 @@ public class DatabaseManager {
             GROUP BY c.id
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, id);
             try (ResultSet rs = pstmt.executeQuery()) {
                 if (rs.next()) {
@@ -185,7 +190,7 @@ public class DatabaseManager {
     }
 
     public static int getLastInsertId() throws SQLException {
-        try (Statement stmt = connection.createStatement()) {
+        try (Statement stmt = getConnection().createStatement()) {
             try (ResultSet rs = stmt.executeQuery("SELECT last_insert_rowid()")) {
                 if (rs.next()) {
                     return rs.getInt(1);
@@ -203,7 +208,7 @@ public class DatabaseManager {
             WHERE c1.contribution_id = ? AND c1.player_uuid = ? AND c2.player_uuid = ?
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             pstmt.setString(2, managerUuid.toString());
             pstmt.setString(3, targetUuid.toString());
@@ -232,7 +237,7 @@ public class DatabaseManager {
             WHERE contribution_id = ? AND player_uuid = ?
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             pstmt.setString(2, playerUuid.toString());
             
@@ -263,7 +268,7 @@ public class DatabaseManager {
             )
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             pstmt.setInt(2, contributionId);
             pstmt.setString(3, playerUuid.toString());
@@ -294,7 +299,7 @@ public class DatabaseManager {
             WHERE contribution_id = ? AND player_uuid = ?
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             pstmt.setString(2, playerUuid.toString());
             
@@ -329,7 +334,7 @@ public class DatabaseManager {
             ORDER BY level ASC, player_name ASC
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             
             try (ResultSet rs = pstmt.executeQuery()) {
@@ -365,7 +370,7 @@ public class DatabaseManager {
             ORDER BY c.created_at DESC
         """;
         
-        try (Statement stmt = connection.createStatement();
+        try (Statement stmt = getConnection().createStatement();
              ResultSet rs = stmt.executeQuery(sql)) {
             while (rs.next()) {
                 Contribution contribution = new Contribution();
@@ -385,7 +390,7 @@ public class DatabaseManager {
     public static int getContributorCount(int contributionId) throws SQLException {
         String sql = "SELECT COUNT(*) as count FROM contributors WHERE contribution_id = ?";
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setInt(1, contributionId);
             
             try (ResultSet rs = pstmt.executeQuery()) {
@@ -398,41 +403,70 @@ public class DatabaseManager {
         return 0;
     }
 
-    public static void close() throws SQLException {
+    /**
+     * 关闭数据库连接
+     * @throws SQLException 如果关闭连接时发生错误
+     */
+    public static synchronized void close() throws SQLException {
         if (connection != null) {
+            try {
             connection.close();
+                LOGGER.info("数据库连接已关闭");
+            } finally {
+                connection = null; // 确保连接被释放
+            }
         }
     }
 
+    /**
+     * 检查玩家是否是贡献者
+     * @param contributionId 贡献ID
+     * @param playerUuid 玩家UUID
+     * @return true如果玩家是该贡献的贡献者
+     */
     public static boolean isContributor(int contributionId, UUID playerUuid) {
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(
-                 "SELECT 1 FROM contributors WHERE contribution_id = ? AND player_uuid = ?")) {
-            stmt.setInt(1, contributionId);
-            stmt.setString(2, playerUuid.toString());
-            try (ResultSet rs = stmt.executeQuery()) {
-                return rs.next();
+        try {
+            String sql = "SELECT 1 FROM contributors WHERE contribution_id = ? AND player_uuid = ?";
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+                pstmt.setInt(1, contributionId);
+                pstmt.setString(2, playerUuid.toString());
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    return rs.next(); // 如果有结果，则是贡献者
+                }
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            LOGGER.error("检查贡献者失败", e);
             return false;
         }
     }
 
+    /**
+     * 根据名称获取贡献
+     * @param name 贡献名称
+     * @return 贡献对象，不存在则返回null
+     */
     public static Contribution getContributionByName(String name) {
-        try (Connection conn = getConnection();
-             PreparedStatement stmt = conn.prepareStatement(
-                 "SELECT * FROM contributions WHERE name = ?")) {
-            stmt.setString(1, name);
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    Contribution contribution = new Contribution();
-                    setContributionFromResultSet(contribution, rs);
-                    return contribution;
+        try {
+            String sql = """
+                SELECT c.*, GROUP_CONCAT(ct.player_name) as contributors,
+                       (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name
+                FROM contributions c
+                LEFT JOIN contributors ct ON c.id = ct.contribution_id
+                WHERE c.name = ?
+                GROUP BY c.id
+            """;
+            try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
+                pstmt.setString(1, name);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        Contribution contribution = new Contribution();
+                        setContributionFromResultSet(contribution, rs);
+                        return contribution;
+                    }
                 }
             }
         } catch (SQLException e) {
-            e.printStackTrace();
+            LOGGER.error("获取贡献失败", e);
         }
         return null;
     }
@@ -469,7 +503,7 @@ public class DatabaseManager {
             ORDER BY c.created_at DESC
         """;
         
-        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+        try (PreparedStatement pstmt = getConnection().prepareStatement(sql)) {
             pstmt.setString(1, creatorUuid.toString());
             
             try (ResultSet rs = pstmt.executeQuery()) {

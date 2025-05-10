@@ -2,13 +2,16 @@ package com.example.contribtracker;
 
 import com.example.contribtracker.database.Contribution;
 import com.example.contribtracker.database.DatabaseManager;
-import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.server.network.ServerPlayerEntity;
 import java.util.UUID;
 import java.util.Arrays;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ContribPermissionManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger(ContribTrackerMod.MOD_ID);
+
     // 管理员UUID列表，可以在代码中硬编码，也可以从配置文件加载
     private static final List<UUID> ADMIN_UUIDS = Arrays.asList(
         // 这里可以添加管理员的UUID
@@ -26,7 +29,7 @@ public class ContribPermissionManager {
      * @param contribution 要删除的贡献
      * @return true如果玩家是管理员或贡献的创建者
      */
-    public static boolean canDeleteContribution(PlayerEntity player, Contribution contribution) {
+    public static boolean canDeleteContribution(ServerPlayerEntity player, Contribution contribution) {
         try {
             // 检查是否是管理员
             if (isAdmin(player)) {
@@ -48,7 +51,7 @@ public class ContribPermissionManager {
      * @param targetUuid 要删除的贡献者的UUID
      * @return true如果玩家是管理员、贡献的创建者，或者玩家是目标贡献者的上级
      */
-    public static boolean canDeleteContributor(PlayerEntity player, Contribution contribution, UUID targetUuid) {
+    public static boolean canDeleteContributor(ServerPlayerEntity player, Contribution contribution, UUID targetUuid) {
         try {
             // 检查是否是管理员
             if (isAdmin(player)) {
@@ -74,7 +77,7 @@ public class ContribPermissionManager {
      * @param contribution 贡献
      * @return true如果玩家是管理员、贡献的创建者，或者是现有贡献者
      */
-    public static boolean canInviteContributor(PlayerEntity player, Contribution contribution) {
+    public static boolean canInviteContributor(ServerPlayerEntity player, Contribution contribution) {
         try {
             // 检查是否是管理员
             if (isAdmin(player)) {
@@ -100,7 +103,7 @@ public class ContribPermissionManager {
      * @param contribution 贡献
      * @return true如果玩家是管理员、贡献的创建者，或者是一级贡献者
      */
-    public static boolean canDirectlyAddContributor(PlayerEntity player, Contribution contribution) {
+    public static boolean canDirectlyAddContributor(ServerPlayerEntity player, Contribution contribution) {
         try {
             // 检查是否是管理员
             if (isAdmin(player)) {
@@ -122,52 +125,54 @@ public class ContribPermissionManager {
     
     /**
      * 检查玩家是否是管理员
-     * @param player 玩家
-     * @return true如果玩家是管理员
+     * @param player 要检查的玩家
+     * @return 是否是管理员
      */
-    public static boolean isAdmin(PlayerEntity player) {
+    public static boolean isAdmin(ServerPlayerEntity player) {
         if (player == null) {
             return false;
         }
-        
-        // 检查是否是OP
-        if (player instanceof ServerPlayerEntity) {
-            ServerPlayerEntity serverPlayer = (ServerPlayerEntity) player;
-            if (serverPlayer.hasPermissionLevel(4)) { // OP级别 4 对应最高权限
-                ContribTrackerMod.debug(player.getName().getString() + " 是服务器OP，判定为管理员");
-                return true;
-            }
+
+        // 检查是否是服务器OP
+        if (player.hasPermissionLevel(4)) {
+            return true;
         }
-        
+
         // 检查UUID是否在管理员列表中
-        if (ADMIN_UUIDS.contains(player.getUuid())) {
-            ContribTrackerMod.debug(player.getName().getString() + " 的UUID在管理员列表中，判定为管理员");
+        UUID playerUuid = player.getUuid();
+        if (isAdminUuid(playerUuid)) {
             return true;
         }
-        
-        // 检查玩家名是否在管理员列表中
+
+        // 检查玩家名是否在管理员名单中
         String playerName = player.getName().getString();
-        if (ADMIN_NAMES.contains(playerName)) {
-            ContribTrackerMod.debug(playerName + " 在管理员名单中，判定为管理员");
+        if (isAdminName(playerName)) {
             return true;
         }
-        
-        // 如果在开发环境中，可以通过特定的玩家名判断为管理员（用于测试）
-        if (isDevelopmentEnvironment() && playerName.startsWith("Dev")) {
-            ContribTrackerMod.debug("开发环境中，" + playerName + " 以'Dev'开头，判定为管理员");
-            return true;
-        }
-        
-        ContribTrackerMod.debug(playerName + " 不是管理员");
+
         return false;
     }
-    
+
     /**
-     * 判断当前是否是开发环境
-     * @return true如果是开发环境
+     * 检查UUID是否是管理员
+     * @param uuid 要检查的UUID
+     * @return 是否是管理员
      */
-    private static boolean isDevelopmentEnvironment() {
-        // 可以通过系统属性或其他方式判断
-        return System.getProperty("dev.mode") != null;
+    public static boolean isAdminUuid(UUID uuid) {
+        return ADMIN_UUIDS.contains(uuid);
+    }
+
+    /**
+     * 检查玩家名是否是管理员
+     * @param playerName 要检查的玩家名
+     * @return 是否是管理员
+     */
+    public static boolean isAdminName(String playerName) {
+        // 开发环境中，以'Dev'开头的玩家名视为管理员
+        if (playerName.startsWith("Dev")) {
+            return true;
+        }
+
+        return ADMIN_NAMES.contains(playerName);
     }
 } 

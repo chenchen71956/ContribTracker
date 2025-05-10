@@ -38,59 +38,39 @@ public class ListCommand implements BaseCommand {
     private int listContributions(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
         ServerCommandSource source = context.getSource();
         ServerPlayerEntity player = source.getPlayer();
-        
-        // 添加调试信息
-        if (player != null) {
-            ContribTrackerMod.debug("玩家 " + player.getName().getString() + " 执行了list命令");
-        } else {
-            ContribTrackerMod.debug("控制台执行了list命令");
-        }
 
         try {
-            // 获取所有贡献
-            ContribTrackerMod.debug("正在获取所有贡献记录...");
+            // 获取所有贡献记录
             List<Contribution> contributions = DatabaseManager.getAllContributions();
-            ContribTrackerMod.debug("成功获取到 " + contributions.size() + " 条贡献记录");
-
+            
             if (contributions.isEmpty()) {
-                source.sendMessage(Text.of("§c目前还没有任何贡献记录"));
+                source.sendMessage(Text.of("§c当前没有任何贡献记录"));
                 return 0;
             }
 
-            // 发送表头
-            source.sendMessage(Text.of("§a========== 贡献列表 =========="));
-            source.sendMessage(Text.of("§7ID | 贡献类型 | 贡献名称 | 创建人 | 坐标"));
-            source.sendMessage(Text.of("§7------------------------------------"));
+            // 显示贡献列表
+            source.sendMessage(Text.of("§a=== 贡献列表 ==="));
+            source.sendMessage(Text.of("§eID | 贡献类型 | 贡献名称 | 创建人 | 坐标"));
+            source.sendMessage(Text.of("§e----------------------------------------"));
 
-            // 发送贡献列表
             for (Contribution contribution : contributions) {
-                String coordinates = String.format("%.1f, %.1f, %.1f", 
-                    contribution.getX(), 
-                    contribution.getY(), 
-                    contribution.getZ()
-                );
-                
-                ContribTrackerMod.debug("处理贡献记录: ID=" + contribution.getId() + ", Name=" + contribution.getName());
-
-                source.sendMessage(Text.of(String.format(
-                    "§a%d §7| §f%s §7| §f%s §7| §f%s §7| §f%s", 
+                String message = String.format("§f%d | %s | %s | %s | %.1f, %.1f, %.1f",
                     contribution.getId(),
                     contribution.getType(),
                     contribution.getName(),
                     contribution.getCreatorName(),
-                    coordinates
-                )));
+                    contribution.getX(),
+                    contribution.getY(),
+                    contribution.getZ()
+                );
+                source.sendMessage(Text.of(message));
             }
 
-            source.sendMessage(Text.of("§a=============================="));
-            source.sendMessage(Text.of("§7共显示 " + contributions.size() + " 条贡献记录"));
-            
-            ContribTrackerMod.debug("list命令执行完成，显示了 " + contributions.size() + " 条记录");
-
+            source.sendMessage(Text.of("§e----------------------------------------"));
+            source.sendMessage(Text.of("§a共显示 " + contributions.size() + " 条记录"));
             return 1;
         } catch (SQLException e) {
             LOGGER.error("获取贡献列表失败", e);
-            ContribTrackerMod.debug("list命令执行失败: " + e.getMessage());
             source.sendMessage(Text.of("§c获取贡献列表失败：" + e.getMessage()));
             return 0;
         }

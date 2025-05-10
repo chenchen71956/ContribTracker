@@ -1,7 +1,6 @@
 plugins {
     id 'fabric-loom' version '1.10.5'
     id 'maven-publish'
-    id 'com.github.johnrengelman.shadow' version '7.1.2'
 }
 
 version = project.mod_version
@@ -52,7 +51,8 @@ dependencies {
     modCompileOnly 'org.slf4j:slf4j-simple:2.0.9'
     modCompileOnly 'com.google.code.gson:gson:2.10.1'
     
-    // 只打包SQLite驱动到JAR中
+    // SQLite驱动 - 直接包含在JAR中
+    implementation 'org.xerial:sqlite-jdbc:3.45.1.0'
     include 'org.xerial:sqlite-jdbc:3.45.1.0'
 }
 
@@ -118,25 +118,4 @@ publishing {
         // The repositories here will be used for publishing your artifact, not for
         // retrieving dependencies.
     }
-}
-
-
-shadowJar {
-    archiveClassifier.set('')
-    configurations = [project.configurations.shadow]
-
-    // 正确使用 relocate
-    relocate 'org.sqlite', 'com.example.contribtracker.shadow.org.sqlite'
-    
-    // 只包含SQLite相关的类
-    include 'org/sqlite/**'
-    include 'com/example/contribtracker/shadow/org/sqlite/**'
-}
-
-configurations {
-    shadow
-}
-
-dependencies {
-    shadow 'org.xerial:sqlite-jdbc:3.45.1.0'
 }
