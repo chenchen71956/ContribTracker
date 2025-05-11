@@ -1,13 +1,20 @@
 package com.example.contribtracker.database;
 
+import com.google.gson.annotations.SerializedName;
 import java.util.UUID;
 
 public class ContributorInfo {
+    @SerializedName("playerUuid")
     private UUID playerUuid;
+    
+    @SerializedName("playerName")
     private String playerName;
+    
+    @SerializedName("level")
     private int level;
+    
+    @SerializedName("inviterUuid")
     private UUID inviterUuid;
-    private String note;
 
     public UUID getPlayerUuid() {
         return playerUuid;
@@ -39,13 +46,5 @@ public class ContributorInfo {
 
     public void setInviterUuid(UUID inviterUuid) {
         this.inviterUuid = inviterUuid;
-    }
-
-    public String getNote() {
-        return note;
-    }
-
-    public void setNote(String note) {
-        this.note = note;
     }
 } 

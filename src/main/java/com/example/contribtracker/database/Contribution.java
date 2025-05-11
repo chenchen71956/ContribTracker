@@ -1,26 +1,58 @@
 package com.example.contribtracker.database;
 
+import com.google.gson.annotations.SerializedName;
 import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
 import java.util.ArrayList;
 
 public class Contribution {
+    @SerializedName("id")
     private int id;
+    
+    @SerializedName("name")
     private String name;
+    
+    @SerializedName("type")
     private String type;
+    
+    @SerializedName("creatorUuid")
     private UUID creatorUuid;
+    
+    @SerializedName("creatorName")
     private String creatorName;
+    
+    @SerializedName("x")
     private double x;
+    
+    @SerializedName("y")
     private double y;
+    
+    @SerializedName("z")
     private double z;
+    
+    @SerializedName("world")
     private String world;
+    
+    @SerializedName("createdAt")
     private long createdAt;
+    
+    @SerializedName("dimension")
     private String dimension;
+    
+    @SerializedName("gameId")
     private String gameId;
+    
+    @SerializedName("contributors")
     private String contributors;
+    
+    @SerializedName("inviterUuid")
     private UUID inviterUuid;
+    
+    @SerializedName("inviterLevel")
     private int inviterLevel;
+    
+    @SerializedName("contributorList")
     private List<ContributorInfo> contributorList;
 
     public Contribution() {

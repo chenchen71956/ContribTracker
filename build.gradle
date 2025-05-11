@@ -54,6 +54,14 @@ dependencies {
     // SQLite驱动 - 直接包含在JAR中
     implementation 'org.xerial:sqlite-jdbc:3.45.1.0'
     include 'org.xerial:sqlite-jdbc:3.45.1.0'
+
+    // YAML解析
+    implementation 'org.yaml:snakeyaml:2.2'
+    include 'org.yaml:snakeyaml:2.2'
+
+    // WebSocket服务器
+    implementation 'org.java-websocket:Java-WebSocket:1.5.4'
+    include 'org.java-websocket:Java-WebSocket:1.5.4'
 }
 
 processResources {

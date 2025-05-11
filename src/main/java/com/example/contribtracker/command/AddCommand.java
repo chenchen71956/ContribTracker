@@ -5,6 +5,7 @@ import com.example.contribtracker.ContribTrackerMod;
 import com.example.contribtracker.database.Contribution;
 import com.example.contribtracker.database.ContributorInfo;
 import com.example.contribtracker.database.DatabaseManager;
+import com.example.contribtracker.websocket.WebSocketHandler;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.ArgumentBuilder;
@@ -140,6 +141,8 @@ public class AddCommand implements BaseCommand {
             if (contribution != null) {
                 // 通知附近玩家
                 notifyNearbyPlayers(player, contribution);
+                // 广播WebSocket消息
+                WebSocketHandler.broadcastContributionUpdate(contribution);
             }
 
             source.sendMessage(Text.of("§a已创建新贡献（ID: " + contributionId + "）"));
@@ -184,6 +187,8 @@ public class AddCommand implements BaseCommand {
             if (contribution != null) {
                 // 通知附近玩家
                 notifyNearbyPlayers(player, contribution);
+                // 广播WebSocket消息
+                WebSocketHandler.broadcastContributionUpdate(contribution);
             }
 
             source.sendMessage(Text.of("§a已创建新贡献（ID: " + contributionId + "，类型: " + type + "，名称: " + name + "）"));
