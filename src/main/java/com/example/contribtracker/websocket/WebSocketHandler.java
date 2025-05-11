@@ -6,6 +6,7 @@ import com.example.contribtracker.database.DatabaseManager;
 import com.example.contribtracker.database.Contribution;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,21 +77,10 @@ public class WebSocketHandler {
                 @Override
                 public void onMessage(WebSocketSession session, String message) {
                     try {
-                        JsonObject json = gson.fromJson(message, JsonObject.class);
-                        String type = json.get("type").getAsString();
-                        
-                        switch (type) {
-                            case "pong":
-                                handlePong(session);
-                                break;
-                            case "command":
-                                handleCommand(session, json.get("data").getAsString());
-                                break;
-                            default:
-                                LOGGER.warn("未知的消息类型: {}", type);
-                        }
+                        handleMessage(session, message);
                     } catch (Exception e) {
-                        LOGGER.error("处理消息时出错", e);
+                        LOGGER.error("处理WebSocket消息失败", e);
+                        sendError(session, "消息处理失败: " + e.getMessage());
                     }
                 }
 
@@ -172,9 +162,38 @@ public class WebSocketHandler {
         lastPongTimes.put(session.getId(), System.currentTimeMillis());
     }
 
-    private static void handleCommand(WebSocketSession session, String command) {
-        // TODO: 实现命令处理逻辑
-        LOGGER.info("收到命令: {}", command);
+    private static void handleMessage(WebSocketSession session, String message) {
+        try {
+            JsonObject json = JsonParser.parseString(message).getAsJsonObject();
+            String type = json.get("type").getAsString();
+            
+            switch (type) {
+                case "pong":
+                    handlePong(session);
+                    break;
+                case "check_data":
+                    handleCheckData(session);
+                    break;
+                default:
+                    LOGGER.warn("收到未知类型的消息: {}", type);
+            }
+        } catch (Exception e) {
+            LOGGER.error("处理WebSocket消息失败", e);
+            sendError(session, "消息处理失败: " + e.getMessage());
+        }
+    }
+
+    private static void handleCheckData(WebSocketSession session) {
+        try {
+            List<Contribution> contributions = DatabaseManager.getAllContributions();
+            JsonObject response = new JsonObject();
+            response.addProperty("type", "all_data");
+            response.add("data", gson.toJsonTree(contributions));
+            session.send(gson.toJson(response));
+        } catch (SQLException e) {
+            LOGGER.error("获取贡献数据失败", e);
+            sendError(session, "获取数据失败: " + e.getMessage());
+        }
     }
 
     public static void broadcastUpdate(JsonObject data) {

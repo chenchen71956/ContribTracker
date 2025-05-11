@@ -154,6 +154,7 @@ websocket:
 ```
 
 配置说明：
+
 1. 配置文件会在模组首次运行时自动创建
 2. IP地址必须保持为`127.0.0.1`，不能修改
 3. 可以修改的部分：
@@ -184,6 +185,7 @@ websocket:
 #### 1. 心跳消息
 
 - Ping消息（服务器发送）：
+
 ```json
 {
     "type": "ping"
@@ -191,6 +193,7 @@ websocket:
 ```
 
 - Pong消息（客户端回复）：
+
 ```json
 {
     "type": "pong"
@@ -199,7 +202,8 @@ websocket:
 
 #### 2. 数据更新
 
-- 全部数据：
+- 全部数据（服务器发送）：
+
 ```json
 {
     "type": "all_data",
@@ -212,8 +216,8 @@ websocket:
             "y": 0.0,
             "z": 0.0,
             "world": "世界名称",
-            "creator_uuid": "创建者UUID",
-            "creator_name": "创建者名称",
+            "creatorUuid": "创建者UUID",
+            "creatorName": "创建者名称",
             "contributors": "贡献者列表",
             "contributorList": [
                 {
@@ -228,7 +232,8 @@ websocket:
 }
 ```
 
-- 单个更新：
+- 单个更新（服务器发送）：
+
 ```json
 {
     "type": "update_data",
@@ -238,23 +243,22 @@ websocket:
 }
 ```
 
-#### 3. 错误消息
+#### 3. 数据请求
+
+- 请求全部数据（客户端发送）：
+
+```json
+{
+    "type": "check_data"
+}
+```
+
+#### 4. 错误消息（服务器发送）
 
 ```json
 {
     "type": "error",
     "data": "错误信息"
-}
-```
-
-### 命令消息
-
-客户端可以发送命令消息来控制服务器：
-
-```json
-{
-    "type": "command",
-    "data": "命令内容"
 }
 ```
 
@@ -278,12 +282,19 @@ websocket:
 在开发环境中，可以通过以下方式测试WebSocket连接：
 
 1. 使用WebSocket客户端工具（如wscat）：
+
 ```bash
 wscat -c ws://localhost:25580/ws
 ```
 
 2. 使用浏览器开发者工具：
+
 ```javascript
 const ws = new WebSocket('ws://localhost:25580/ws');
 ws.onmessage = (event) => console.log(event.data);
+
+// 发送check_data请求
+ws.send(JSON.stringify({
+    "type": "check_data"
+}));
 ```
