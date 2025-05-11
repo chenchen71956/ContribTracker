@@ -165,8 +165,9 @@ public class DatabaseManager {
 
     public static Contribution getContributionById(int id) throws SQLException {
         String sql = """
-            SELECT c.*, GROUP_CONCAT(ct.player_name) as contributors,
-                   (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name
+            SELECT c.*, 
+                   (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name,
+                   GROUP_CONCAT(ct.player_name) as contributors
             FROM contributions c
             LEFT JOIN contributors ct ON c.id = ct.contribution_id
             WHERE c.id = ?
@@ -179,6 +180,34 @@ public class DatabaseManager {
                 if (rs.next()) {
                     Contribution contribution = new Contribution();
                     setContributionFromResultSet(contribution, rs);
+                    
+                    // 获取贡献者列表
+                    String sql2 = """
+                        SELECT player_uuid, player_name, level, inviter_uuid
+                        FROM contributors
+                        WHERE contribution_id = ?
+                        ORDER BY level ASC, player_name ASC
+                    """;
+                    
+                    try (PreparedStatement pstmt2 = getConnection().prepareStatement(sql2)) {
+                        pstmt2.setInt(1, id);
+                        try (ResultSet rs2 = pstmt2.executeQuery()) {
+                            List<ContributorInfo> contributorList = new ArrayList<>();
+                            while (rs2.next()) {
+                                ContributorInfo info = new ContributorInfo();
+                                info.setPlayerUuid(UUID.fromString(rs2.getString("player_uuid")));
+                                info.setPlayerName(rs2.getString("player_name"));
+                                info.setLevel(rs2.getInt("level"));
+                                String inviterUuid = rs2.getString("inviter_uuid");
+                                if (inviterUuid != null) {
+                                    info.setInviterUuid(UUID.fromString(inviterUuid));
+                                }
+                                contributorList.add(info);
+                            }
+                            contribution.setContributorList(contributorList);
+                        }
+                    }
+                    
                     return contribution;
                 }
             }
@@ -359,8 +388,9 @@ public class DatabaseManager {
     public static List<Contribution> getAllContributions() throws SQLException {
         List<Contribution> contributions = new ArrayList<>();
         String sql = """
-            SELECT c.*, GROUP_CONCAT(ct.player_name) as contributors,
-                   (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name
+            SELECT c.*, 
+                   (SELECT player_name FROM contributors WHERE contribution_id = c.id AND player_uuid = c.creator_uuid) as creator_name,
+                   GROUP_CONCAT(ct.player_name) as contributors
             FROM contributions c
             LEFT JOIN contributors ct ON c.id = ct.contribution_id
             GROUP BY c.id
@@ -372,6 +402,34 @@ public class DatabaseManager {
             while (rs.next()) {
                 Contribution contribution = new Contribution();
                 setContributionFromResultSet(contribution, rs);
+                
+                // 获取贡献者列表
+                String sql2 = """
+                    SELECT player_uuid, player_name, level, inviter_uuid
+                    FROM contributors
+                    WHERE contribution_id = ?
+                    ORDER BY level ASC, player_name ASC
+                """;
+                
+                try (PreparedStatement pstmt2 = getConnection().prepareStatement(sql2)) {
+                    pstmt2.setInt(1, contribution.getId());
+                    try (ResultSet rs2 = pstmt2.executeQuery()) {
+                        List<ContributorInfo> contributorList = new ArrayList<>();
+                        while (rs2.next()) {
+                            ContributorInfo info = new ContributorInfo();
+                            info.setPlayerUuid(UUID.fromString(rs2.getString("player_uuid")));
+                            info.setPlayerName(rs2.getString("player_name"));
+                            info.setLevel(rs2.getInt("level"));
+                            String inviterUuid = rs2.getString("inviter_uuid");
+                            if (inviterUuid != null) {
+                                info.setInviterUuid(UUID.fromString(inviterUuid));
+                            }
+                            contributorList.add(info);
+                        }
+                        contribution.setContributorList(contributorList);
+                    }
+                }
+                
                 contributions.add(contribution);
             }
         }

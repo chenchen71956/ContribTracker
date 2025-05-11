@@ -359,25 +359,29 @@ public class AddCommand implements BaseCommand {
         contribution.setInviterLevel(inviterLevel);
         
         // 发送邀请消息
-        targetPlayer.sendMessage(Text.of("§a你收到了一个贡献邀请"));
-        targetPlayer.sendMessage(Text.of("§a贡献名称：" + contribution.getName()));
-        targetPlayer.sendMessage(Text.of("§a贡献ID：" + contribution.getId()));
-        targetPlayer.sendMessage(Text.of("§a邀请者：" + inviter.getName().getString()));
+        targetPlayer.sendMessage(Text.of("§e§l=== 贡献邀请 ==="));
+        targetPlayer.sendMessage(Text.of("§f贡献名称：§a" + contribution.getName()));
+        targetPlayer.sendMessage(Text.of("§f贡献类型：§a" + contribution.getType()));
+        targetPlayer.sendMessage(Text.of("§f贡献ID：§a" + contribution.getId()));
+        targetPlayer.sendMessage(Text.of("§f邀请者：§a" + inviter.getName().getString()));
+        targetPlayer.sendMessage(Text.of("§f邀请者级别：§a" + inviterLevel));
+        targetPlayer.sendMessage(Text.of("§e§l================="));
         
         // 创建接受和拒绝按钮
-        Text acceptText = Text.literal("§2[接受]")
+        Text acceptText = Text.literal("§2[接受邀请]")
             .styled(style -> style
                 .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker accept " + contribution.getId()))
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击接受邀请")))
             );
         
-        Text rejectText = Text.literal("§c[拒绝]")
+        Text rejectText = Text.literal("§c[拒绝邀请]")
             .styled(style -> style
                 .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker reject " + contribution.getId()))
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击拒绝邀请")))
             );
         
         targetPlayer.sendMessage(Text.literal("").append(acceptText).append(" ").append(rejectText));
+        targetPlayer.sendMessage(Text.of("§e§l================="));
         
         // 存储邀请信息
         Map<UUID, Contribution> pendingContributions = ContribTrackerMod.getPendingContributions();
@@ -400,9 +404,12 @@ public class AddCommand implements BaseCommand {
         );
 
         for (PlayerEntity nearbyPlayer : nearbyPlayers) {
-            nearbyPlayer.sendMessage(Text.of("§a你周围有人发布了一个新的贡献"));
-            nearbyPlayer.sendMessage(Text.of("§a贡献者：" + player.getName().getString()));
-            nearbyPlayer.sendMessage(Text.of("§a贡献ID：" + contribution.getId()));
+            nearbyPlayer.sendMessage(Text.of("§e§l=== 附近有新贡献 ==="));
+            nearbyPlayer.sendMessage(Text.of("§f贡献名称：§a" + contribution.getName()));
+            nearbyPlayer.sendMessage(Text.of("§f贡献类型：§a" + contribution.getType()));
+            nearbyPlayer.sendMessage(Text.of("§f贡献ID：§a" + contribution.getId()));
+            nearbyPlayer.sendMessage(Text.of("§f创建者：§a" + player.getName().getString()));
+            nearbyPlayer.sendMessage(Text.of("§e§l================="));
             
             // 创建接受邀请按钮
             Text acceptText = Text.literal("§2[加入贡献]")
@@ -412,6 +419,7 @@ public class AddCommand implements BaseCommand {
                 );
             
             nearbyPlayer.sendMessage(acceptText);
+            nearbyPlayer.sendMessage(Text.of("§e§l================="));
             
             // 将附近玩家添加到待邀请列表
             Map<UUID, Contribution> pendingContributions = ContribTrackerMod.getPendingContributions();
