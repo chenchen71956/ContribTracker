@@ -411,14 +411,20 @@ public class AddCommand implements BaseCommand {
             nearbyPlayer.sendMessage(Text.of("§f创建者：§a" + player.getName().getString()));
             nearbyPlayer.sendMessage(Text.of("§e§l================="));
             
-            // 创建接受邀请按钮
+            // 创建接受和拒绝按钮
             Text acceptText = Text.literal("§2[加入贡献]")
                 .styled(style -> style
                     .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker accept " + contribution.getId()))
                     .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击加入贡献")))
                 );
             
-            nearbyPlayer.sendMessage(acceptText);
+            Text rejectText = Text.literal("§c[拒绝邀请]")
+                .styled(style -> style
+                    .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker reject " + contribution.getId()))
+                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击拒绝邀请")))
+                );
+            
+            nearbyPlayer.sendMessage(Text.literal("").append(acceptText).append(" ").append(rejectText));
             nearbyPlayer.sendMessage(Text.of("§e§l================="));
             
             // 将附近玩家添加到待邀请列表

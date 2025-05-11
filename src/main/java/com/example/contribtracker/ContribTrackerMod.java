@@ -29,7 +29,7 @@ import net.minecraft.server.command.ServerCommandSource;
 
 public class ContribTrackerMod implements ModInitializer {
     public static final String MOD_ID = "contribtracker";
-    private static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
     private static MinecraftServer server;
     private static final Map<UUID, Contribution> pendingContributions = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> contributionExpiryTimes = new ConcurrentHashMap<>();
@@ -38,44 +38,34 @@ public class ContribTrackerMod implements ModInitializer {
 
     @Override
     public void onInitialize() {
-        LOGGER.info("初始化 ContribTracker 模组");
-
-        // 注册命令
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
-            dispatcher.register(new AddCommand().register());
-            dispatcher.register(new DeleteCommand().register());
-            dispatcher.register(new ListCommand().register());
-            dispatcher.register(new AcceptCommand().register());
-            dispatcher.register(new RejectCommand().register());
-        });
-
-        // 初始化数据库
+        // 设置线程名称
+        Thread.currentThread().setName("ContribTracker");
+        
         try {
-            File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "null_city/contributions");
-            if (!configDir.exists()) {
-                configDir.mkdirs();
-            }
-            
-            // 初始化WebSocket配置
-            WebSocketConfig.initialize(configDir);
-            
             // 初始化数据库
             DatabaseManager.initialize();
             LOGGER.info("数据库初始化成功");
-        } catch (SQLException e) {
-            LOGGER.error("数据库初始化失败", e);
-        }
-
-        // 初始化WebSocket连接
-        try {
+            
+            // 初始化WebSocket
             WebSocketHandler.initialize();
             LOGGER.info("WebSocket初始化成功");
+            
+            // 注册命令
+            registerCommands();
+            
+            // 注册服务器停止事件
+            ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+                try {
+                    DatabaseManager.close();
+                    LOGGER.info("数据库连接已关闭");
+                } catch (SQLException e) {
+                    LOGGER.error("关闭数据库连接失败", e);
+                }
+            });
+            
         } catch (Exception e) {
-            LOGGER.error("WebSocket初始化失败", e);
+            LOGGER.error("模组初始化失败", e);
         }
-
-        // 启动定时任务
-        startScheduledTasks();
     }
 
     private void onServerStarting(MinecraftServer server) {
@@ -113,6 +103,16 @@ public class ContribTrackerMod implements ModInitializer {
                 }
                 return false;
             });
+        });
+    }
+
+    private void registerCommands() {
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            dispatcher.register(new AddCommand().register());
+            dispatcher.register(new DeleteCommand().register());
+            dispatcher.register(new ListCommand().register());
+            dispatcher.register(new AcceptCommand().register());
+            dispatcher.register(new RejectCommand().register());
         });
     }
 } 
