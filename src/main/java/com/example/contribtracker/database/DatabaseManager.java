@@ -9,6 +9,8 @@ import java.io.File;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -24,17 +26,17 @@ public class DatabaseManager {
     
     // 查询缓存系统
     private static final Map<String, List<Contribution>> contributionCache = new ConcurrentHashMap<>();
-    private static final Map<Long, Contribution> contributionByIdCache = new ConcurrentHashMap<>(); 
+    private static final Map<Integer, Contribution> contributionByIdCache = new ConcurrentHashMap<>(); 
     private static final Map<String, Long> lastCacheUpdateTime = new ConcurrentHashMap<>();
     private static final long CACHE_EXPIRE_TIME = 5000; // 缓存过期时间：5秒
 
     public static void initialize() throws SQLException {
         try {
             // 确保目录存在
-            File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "null_city/contributions");
-            if (!configDir.exists()) {
-                configDir.mkdirs();
-            }
+        File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "null_city/contributions");
+        if (!configDir.exists()) {
+            configDir.mkdirs();
+        }
             
             // 设置数据库文件
             dbFile = new File(configDir, "contributions.db");
@@ -65,7 +67,7 @@ public class DatabaseManager {
             dataSource = new HikariDataSource(config);
             
             // 创建表
-            createTables();
+        createTables();
             
             LOGGER.info("数据库连接池已初始化，最大连接数: {}", config.getMaximumPoolSize());
         } catch (Exception e) {
@@ -118,7 +120,20 @@ public class DatabaseManager {
         return dataSource.getConnection();
     }
 
-    public static void addContribution(String name, String type, String gameId, 
+    /**
+     * 添加新贡献到数据库
+     * @param name 贡献名称
+     * @param type 贡献类型
+     * @param gameId 游戏ID
+     * @param x X坐标
+     * @param y Y坐标 
+     * @param z Z坐标
+     * @param world 世界名称
+     * @param creatorUuid 创建者UUID
+     * @return 新创建贡献的ID
+     * @throws SQLException 如果数据库操作失败
+     */
+    public static int addContribution(String name, String type, String gameId, 
                                      double x, double y, double z, String world,
                                      UUID creatorUuid) throws SQLException {
         String sql = """
@@ -137,9 +152,44 @@ public class DatabaseManager {
             pstmt.setString(7, world);
             pstmt.setString(8, creatorUuid.toString());
             pstmt.executeUpdate();
+            
+            try (ResultSet rs = pstmt.getGeneratedKeys()) {
+                if (rs.next()) {
+                    return rs.getInt(1);
+                }
+            }
         }
+        throw new SQLException("创建贡献失败，无法获取ID");
+    }
+    
+    /**
+     * 添加贡献对象到数据库
+     * @param contribution 贡献对象
+     * @return 新创建贡献的ID
+     * @throws SQLException 如果数据库操作失败
+     */
+    public static int addContribution(Contribution contribution) throws SQLException {
+        return addContribution(
+            contribution.getName(),
+            contribution.getType(),
+            contribution.getGameId(),
+            contribution.getX(),
+            contribution.getY(),
+            contribution.getZ(),
+            contribution.getWorld(),
+            contribution.getCreatorUuid()
+        );
     }
 
+    /**
+     * 添加贡献者
+     * @param contributionId 贡献ID
+     * @param playerUuid 玩家UUID
+     * @param playerName 玩家名称
+     * @param note 备注
+     * @param inviterUuid 邀请者UUID
+     * @throws SQLException 如果数据库操作失败
+     */
     public static void addContributor(int contributionId, UUID playerUuid, String playerName, String note, UUID inviterUuid) 
             throws SQLException {
         String sql = """
@@ -164,6 +214,22 @@ public class DatabaseManager {
             pstmt.setString(8, inviterUuid != null ? inviterUuid.toString() : null);
             pstmt.executeUpdate();
         }
+    }
+    
+    /**
+     * 添加贡献者（使用ContributorInfo对象）
+     * @param contributionId 贡献ID
+     * @param contributor 贡献者信息对象
+     * @throws SQLException 如果数据库操作失败
+     */
+    public static void addContributor(int contributionId, ContributorInfo contributor) throws SQLException {
+        addContributor(
+            contributionId, 
+            contributor.getPlayerUuid(), 
+            contributor.getPlayerName(), 
+            null, // note
+            contributor.getInviterUuid()
+        );
     }
 
     public static List<Contribution> getNearbyContributions(double x, double y, double z, double radius) 
@@ -730,5 +796,36 @@ public class DatabaseManager {
         contributionByIdCache.clear();
         lastCacheUpdateTime.clear();
         LOGGER.debug("已清除所有数据库查询缓存");
+    }
+    
+    /**
+     * 根据名称查找玩家信息
+     * @param playerName 玩家名称
+     * @return 包含匹配玩家信息的列表
+     * @throws SQLException 如果查询过程中发生SQL错误
+     */
+    public static List<ContributorInfo> findPlayerByName(String playerName) throws SQLException {
+        List<ContributorInfo> result = new ArrayList<>();
+        String sql = """
+            SELECT DISTINCT player_uuid, player_name
+            FROM contributors
+            WHERE player_name LIKE ?
+        """;
+        
+        try (Connection conn = getConnection();
+             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+            pstmt.setString(1, "%" + playerName + "%");
+            
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    ContributorInfo info = new ContributorInfo();
+                    info.setPlayerUuid(UUID.fromString(rs.getString("player_uuid")));
+                    info.setPlayerName(rs.getString("player_name"));
+                    result.add(info);
+                }
+            }
+        }
+        
+        return result;
     }
 } 

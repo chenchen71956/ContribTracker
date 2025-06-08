@@ -66,21 +66,21 @@ public class ContribTrackerMod implements ModInitializer {
     public void onInitialize() {
         // 初始化配置目录
         setupConfigDirectories();
-        
-        // 注册命令
-        registerCommands();
-        
+            
+            // 注册命令
+            registerCommands();
+            
         // 异步初始化数据库和WebSocket
         WORKER_POOL.execute(() -> {
-            try {
+                try {
                 LogHelper.info("异步初始化数据库...");
                 DatabaseManager.initialize();
                 LogHelper.info("数据库初始化成功");
             } catch (Exception e) {
                 LogHelper.error("数据库初始化失败", e);
-            }
-        });
-        
+                }
+            });
+            
         WORKER_POOL.execute(() -> {
             try {
                 LogHelper.info("异步初始化WebSocket...");

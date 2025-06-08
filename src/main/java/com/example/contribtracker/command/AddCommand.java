@@ -5,6 +5,7 @@ import com.example.contribtracker.ContribTrackerMod;
 import com.example.contribtracker.database.Contribution;
 import com.example.contribtracker.database.ContributorInfo;
 import com.example.contribtracker.database.DatabaseManager;
+import com.example.contribtracker.util.LogHelper;
 import com.example.contribtracker.websocket.WebSocketHandler;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -114,6 +115,7 @@ public class AddCommand implements BaseCommand {
                 String playerName = player.getName().getString();
                 Vec3d pos = player.getPos();
                 String worldName = getWorldName(player.getWorld());
+                MinecraftServer server = source.getServer();
                 
                 // 创建贡献
                 Contribution contribution = new Contribution();
@@ -123,16 +125,16 @@ public class AddCommand implements BaseCommand {
                 contribution.setY(pos.y);
                 contribution.setZ(pos.z);
                 contribution.setWorld(worldName);
-                contribution.setCreatorUuid(playerUUID.toString());
+                contribution.setCreatorUuid(playerUUID);
                 contribution.setCreatorName(playerName);
                 
                 // 保存到数据库
-                long id = DatabaseManager.addContribution(contribution);
+                int id = DatabaseManager.addContribution(contribution);
                 
                 if (id > 0) {
                     // 添加创建者作为一级贡献者
                     ContributorInfo creator = new ContributorInfo();
-                    creator.setPlayerUuid(playerUUID.toString());
+                    creator.setPlayerUuid(playerUUID);
                     creator.setPlayerName(playerName);
                     creator.setLevel(CREATOR_LEVEL);
                     creator.setInviterUuid(null);
@@ -141,27 +143,30 @@ public class AddCommand implements BaseCommand {
                     
                     contribution.setId(id);
                     // 通知客户端
-                    source.getServer().execute(() -> {
+                    final int finalId = id;
+                    server.execute(() -> {
                         source.sendFeedback(() -> Text.literal(
-                            String.format("成功创建贡献: ID=%d, 类型=%s, 名称=%s", id, type, name)
+                            String.format("成功创建贡献: ID=%d, 类型=%s, 名称=%s", finalId, type, name)
                         ).formatted(Formatting.GREEN), true);
                     });
                     
                     // 广播更新
                     com.example.contribtracker.websocket.WebSocketHandler.broadcastContributionUpdate(contribution);
                 } else {
-                    source.getServer().execute(() -> {
+                    server.execute(() -> {
                         source.sendError(Text.literal("创建贡献失败"));
                     });
                 }
             } catch (SQLException e) {
                 ContribTrackerMod.LOGGER.error("创建贡献时发生数据库错误", e);
-                source.getServer().execute(() -> {
+                MinecraftServer server = source.getServer();
+                server.execute(() -> {
                     source.sendError(Text.literal("创建贡献时发生错误: " + e.getMessage()));
                 });
             } catch (Exception e) {
                 ContribTrackerMod.LOGGER.error("创建贡献时发生错误", e);
-                source.getServer().execute(() -> {
+                MinecraftServer server = source.getServer();
+                server.execute(() -> {
                     source.sendError(Text.literal("创建贡献时发生未知错误"));
                 });
             }
@@ -210,39 +215,53 @@ public class AddCommand implements BaseCommand {
                 contribution.setY(pos.y);
                 contribution.setZ(pos.z);
                 contribution.setWorld(worldName);
-                contribution.setCreatorUuid(playerUUID.toString());
+                contribution.setCreatorUuid(playerUUID);
                 contribution.setCreatorName(playerName);
                 
-                long id = DatabaseManager.addContribution(contribution);
+                int id = DatabaseManager.addContribution(contribution);
                 
                 if (id > 0) {
                     // 添加创建者作为一级贡献者
                     ContributorInfo creator = new ContributorInfo();
-                    creator.setPlayerUuid(playerUUID.toString());
+                    creator.setPlayerUuid(playerUUID);
                     creator.setPlayerName(playerName);
                     creator.setLevel(CREATOR_LEVEL);
                     creator.setInviterUuid(null);
                     DatabaseManager.addContributor(id, creator);
                     
+                    contribution.setId(id);
+                    
                     // 添加指定玩家为二级贡献者
                     ContributorInfo contributor = new ContributorInfo();
+                    final int finalId = id;
                     
                     if (targetPlayer != null) {
                         // 在线玩家
-                        contributor.setPlayerUuid(targetPlayer.getUuid().toString());
+                        contributor.setPlayerUuid(targetPlayer.getUuid());
                         contributor.setPlayerName(targetPlayer.getName().getString());
                         contributor.setLevel(CONTRIBUTOR_LEVEL);
-                        contributor.setInviterUuid(playerUUID.toString());
+                        contributor.setInviterUuid(playerUUID);
+                        
+                        if (DatabaseManager.isContributor(contribution.getId(), targetPlayer.getUuid())) {
+                            server.execute(() -> {
+                                source.sendFeedback(() -> Text.literal(
+                                    String.format("玩家 %s 已经是贡献 %s 的贡献者", targetPlayerName, contribution.getName())
+                                ).formatted(Formatting.YELLOW), false);
+                            });
+                            return;
+                        }
+                        
                         DatabaseManager.addContributor(id, contributor);
                         
                         server.execute(() -> {
+                            // 发送消息给目标玩家
                             targetPlayer.sendMessage(Text.literal(
-                                String.format("你已被添加为贡献 %s (ID: %d) 的贡献者", name, id)
+                                String.format("你已被添加为贡献 %s (ID: %d) 的贡献者", name, finalId)
                             ).formatted(Formatting.GREEN));
                             
                             source.sendFeedback(() -> Text.literal(
                                 String.format("成功创建贡献: ID=%d, 类型=%s, 名称=%s，并添加玩家 %s 为贡献者",
-                                    id, type, name, targetPlayer.getName().getString())
+                                    finalId, type, name, targetPlayer.getName().getString())
                             ).formatted(Formatting.GREEN), true);
                         });
                     } else {
@@ -251,16 +270,18 @@ public class AddCommand implements BaseCommand {
                         
                         if (!offlinePlayerInfo.isEmpty()) {
                             ContributorInfo offlinePlayer = offlinePlayerInfo.get(0);
+                            
                             contributor.setPlayerUuid(offlinePlayer.getPlayerUuid());
                             contributor.setPlayerName(offlinePlayer.getPlayerName());
                             contributor.setLevel(CONTRIBUTOR_LEVEL);
-                            contributor.setInviterUuid(playerUUID.toString());
+                            contributor.setInviterUuid(playerUUID);
+                            
                             DatabaseManager.addContributor(id, contributor);
                             
                             server.execute(() -> {
                                 source.sendFeedback(() -> Text.literal(
-                                    String.format("成功创建贡献: ID=%d, 类型=%s, 名称=%s，并添加离线玩家 %s 为贡献者",
-                                        id, type, name, offlinePlayer.getPlayerName())
+                                    String.format("成功创建贡献: ID=%d, 类型=%s, 名称=%s, 并添加离线玩家 %s 为贡献者",
+                                        finalId, type, name, offlinePlayer.getPlayerName())
                                 ).formatted(Formatting.GREEN), true);
                             });
                         } else {
@@ -282,18 +303,20 @@ public class AddCommand implements BaseCommand {
                 }
             } catch (SQLException e) {
                 ContribTrackerMod.LOGGER.error("创建贡献时发生数据库错误", e);
-                source.getServer().execute(() -> {
+                MinecraftServer server = source.getServer();
+                server.execute(() -> {
                     source.sendError(Text.literal("创建贡献时发生错误: " + e.getMessage()));
                 });
             } catch (Exception e) {
                 ContribTrackerMod.LOGGER.error("创建贡献时发生错误", e);
-                source.getServer().execute(() -> {
+                MinecraftServer server = source.getServer();
+                server.execute(() -> {
                     source.sendError(Text.literal("创建贡献时发生未知错误"));
                 });
             }
         }, ContribTrackerMod.WORKER_POOL);
         
-            return 1;
+        return 1;
     }
 
     private int executeAddPlayer(CommandContext<ServerCommandSource> context) {
@@ -302,8 +325,8 @@ public class AddCommand implements BaseCommand {
         // 快速基本检查
         if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
             source.sendError(Text.literal("只有玩家可以执行此命令"));
-                return 0;
-            }
+            return 0;
+        }
 
         // 获取参数
         String idStr = StringArgumentType.getString(context, "id");
@@ -327,9 +350,9 @@ public class AddCommand implements BaseCommand {
                 String playerName = player.getName().getString();
                 MinecraftServer server = source.getServer();
                 
-            // 检查贡献是否存在
-            Contribution contribution = DatabaseManager.getContributionById(contributionId);
-            if (contribution == null) {
+                // 检查贡献是否存在
+                Contribution contribution = DatabaseManager.getContributionById((int)contributionId);
+                if (contribution == null) {
                     server.execute(() -> {
                         source.sendError(Text.literal("找不到ID为 " + contributionId + " 的贡献"));
                     });
@@ -337,7 +360,7 @@ public class AddCommand implements BaseCommand {
                 }
                 
                 // 检查权限
-                int playerLevel = ContribPermissionManager.getContributorLevel(contributionId, playerUUID.toString());
+                int playerLevel = ContribPermissionManager.getContributorLevel(contributionId, playerUUID);
                 boolean isAdmin = source.hasPermissionLevel(2);
                 
                 if (!isAdmin && playerLevel > CREATOR_LEVEL) {
@@ -390,12 +413,14 @@ public class AddCommand implements BaseCommand {
                 }
             } catch (SQLException e) {
                 ContribTrackerMod.LOGGER.error("添加贡献者时发生数据库错误", e);
-                source.getServer().execute(() -> {
+                MinecraftServer server = source.getServer();
+                server.execute(() -> {
                     source.sendError(Text.literal("添加贡献者时发生错误: " + e.getMessage()));
                 });
             } catch (Exception e) {
                 ContribTrackerMod.LOGGER.error("添加贡献者时发生错误", e);
-                source.getServer().execute(() -> {
+                MinecraftServer server = source.getServer();
+                server.execute(() -> {
                     source.sendError(Text.literal("添加贡献者时发生未知错误"));
                 });
             }
@@ -411,16 +436,15 @@ public class AddCommand implements BaseCommand {
         
         if (targetPlayer != null) {
             // 在线玩家
-            contributor.setPlayerUuid(targetPlayer.getUuid().toString());
+            contributor.setPlayerUuid(targetPlayer.getUuid());
             contributor.setPlayerName(targetPlayer.getName().getString());
             contributor.setLevel(CONTRIBUTOR_LEVEL);
-            contributor.setInviterUuid(inviterUUID.toString());
+            contributor.setInviterUuid(inviterUUID);
             
-            // 检查是否已经是贡献者
-            if (DatabaseManager.isContributor(contribution.getId(), targetPlayer.getUuid().toString())) {
-                server.execute(() -> {
-                    source.sendError(Text.literal(targetPlayer.getName().getString() + " 已经是此贡献的贡献者"));
-                });
+            if (DatabaseManager.isContributor(contribution.getId(), targetPlayer.getUuid())) {
+                source.sendFeedback(() -> Text.literal(
+                    String.format("玩家 %s 已经是贡献 %s 的贡献者", targetPlayerName, contribution.getName())
+                ).formatted(Formatting.YELLOW), false);
                 return;
             }
             
@@ -455,7 +479,7 @@ public class AddCommand implements BaseCommand {
                 contributor.setPlayerUuid(offlinePlayer.getPlayerUuid());
                 contributor.setPlayerName(offlinePlayer.getPlayerName());
                 contributor.setLevel(CONTRIBUTOR_LEVEL);
-                contributor.setInviterUuid(inviterUUID.toString());
+                contributor.setInviterUuid(inviterUUID);
                 DatabaseManager.addContributor(contribution.getId(), contributor);
                 
                 server.execute(() -> {

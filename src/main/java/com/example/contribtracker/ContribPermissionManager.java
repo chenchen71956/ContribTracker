@@ -1,9 +1,11 @@
 package com.example.contribtracker;
 
 import com.example.contribtracker.database.Contribution;
+import com.example.contribtracker.database.ContributorInfo;
 import com.example.contribtracker.database.DatabaseManager;
 import net.minecraft.server.network.ServerPlayerEntity;
 import java.util.UUID;
+import java.sql.SQLException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -107,6 +109,25 @@ public class ContribPermissionManager {
         } catch (Exception e) {
             e.printStackTrace();
             return false;
+        }
+    }
+    
+    /**
+     * 获取玩家在贡献中的级别
+     * @param contributionId 贡献ID
+     * @param playerUuid 玩家UUID
+     * @return 玩家级别，如果不是贡献者则返回-1
+     */
+    public static int getContributorLevel(long contributionId, UUID playerUuid) {
+        try {
+            ContributorInfo info = DatabaseManager.getContributorInfo((int)contributionId, playerUuid);
+            if (info != null) {
+                return info.getLevel();
+            }
+            return -1;
+        } catch (SQLException e) {
+            LOGGER.error("获取贡献者级别时发生错误", e);
+            return -1;
         }
     }
     

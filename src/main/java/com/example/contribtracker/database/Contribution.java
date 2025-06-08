@@ -58,6 +58,44 @@ public class Contribution {
     public Contribution() {
         this.contributorList = new ArrayList<>();
     }
+    
+    /**
+     * 创建当前贡献对象的深拷贝
+     * @return 当前对象的深拷贝
+     */
+    public Contribution copy() {
+        Contribution copy = new Contribution();
+        copy.id = this.id;
+        copy.name = this.name;
+        copy.type = this.type;
+        copy.creatorUuid = this.creatorUuid;
+        copy.creatorName = this.creatorName;
+        copy.x = this.x;
+        copy.y = this.y;
+        copy.z = this.z;
+        copy.world = this.world;
+        copy.createdAt = this.createdAt;
+        copy.dimension = this.dimension;
+        copy.gameId = this.gameId;
+        copy.contributors = this.contributors;
+        copy.inviterUuid = this.inviterUuid;
+        copy.inviterLevel = this.inviterLevel;
+        
+        if (this.contributorList != null) {
+            List<ContributorInfo> copyList = new ArrayList<>();
+            for (ContributorInfo info : this.contributorList) {
+                ContributorInfo infoCopy = new ContributorInfo();
+                infoCopy.setPlayerUuid(info.getPlayerUuid());
+                infoCopy.setPlayerName(info.getPlayerName());
+                infoCopy.setLevel(info.getLevel());
+                infoCopy.setInviterUuid(info.getInviterUuid());
+                copyList.add(infoCopy);
+            }
+            copy.contributorList = copyList;
+        }
+        
+        return copy;
+    }
 
     public int getId() {
         return id;
