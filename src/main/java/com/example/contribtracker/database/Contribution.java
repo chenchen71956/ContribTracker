@@ -48,7 +48,7 @@ public class Contribution {
     
     @SerializedName("inviterUuid")
     private UUID inviterUuid;
-    
+
     @SerializedName("inviterLevel")
     private int inviterLevel;
     

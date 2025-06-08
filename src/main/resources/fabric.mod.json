@@ -3,10 +3,15 @@
   "id": "contribtracker",
   "version": "${version}",
   "name": "ContribTracker",
-  "description": "",
-  "authors": [],
-  "contact": {},
-  "license": "All-Rights-Reserved",
+  "description": "一个用于追踪玩家贡献的Minecraft Fabric服务器模组",
+  "authors": [
+    "kongchengli"
+  ],
+  "contact": {
+    "homepage": "https://github.com/kongchengli/contribtracker",
+    "issues": "https://github.com/kongchengli/contribtracker/issues"
+  },
+  "license": "MIT",
   "icon": "assets/contribtracker/icon.png",
   "environment": "server",
   "entrypoints": {
@@ -27,6 +32,7 @@
   "depends": {
     "fabricloader": ">=${loader_version}",
     "fabric": "*",
-    "minecraft": "${minecraft_version}"
+    "minecraft": "${minecraft_version}",
+    "java": ">=17"
   }
 }

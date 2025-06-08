@@ -29,6 +29,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.World;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.util.Formatting;
+
+import static net.minecraft.server.command.CommandManager.argument;
+import static net.minecraft.server.command.CommandManager.literal;
 
 /**
  * 添加贡献命令
@@ -42,397 +50,453 @@ public class AddCommand implements BaseCommand {
     // 贡献的固定类型列表
     private static final String[] CONTRIBUTION_TYPES = {"redstone", "building", "landmark", "other"};
 
+    private static final int ADMIN_LEVEL = 0;
+    private static final int CREATOR_LEVEL = 1;
+    private static final int CONTRIBUTOR_LEVEL = 2;
+
     @Override
     public LiteralArgumentBuilder<ServerCommandSource> register() {
-        LiteralArgumentBuilder<ServerCommandSource> builder = CommandManager.literal("contribtracker")
-            .then(CommandManager.literal("add")
-                // 针对最新贡献添加贡献者或发邀请
-                .then(createPlayerArgument(1))
-                // 针对特定贡献ID添加贡献者或发邀请
-                .then(CommandManager.argument("contributionId", IntegerArgumentType.integer(1))
-                    .then(createPlayerArgument(1, true))
+        return literal("contribtracker")
+            .then(literal("add")
+                .then(argument("type", StringArgumentType.word())
+                    .suggests((context, builder) -> {
+                        builder.suggest("redstone");
+                        builder.suggest("building");
+                        builder.suggest("landmark");
+                        builder.suggest("other");
+                        return builder.buildFuture();
+                    })
+                    .then(argument("name", StringArgumentType.greedyString())
+                        .executes(this::executeAddContribution)
+                    )
+                    .then(argument("name", StringArgumentType.string())
+                        .then(argument("player", StringArgumentType.word())
+                            .executes(this::executeAddContributionWithPlayer)
+                        )
+                    )
                 )
-            );
-            
-        // 为每种贡献类型创建子命令
-        for (String type : CONTRIBUTION_TYPES) {
-            builder.then(CommandManager.literal("add")
-                .then(CommandManager.literal(type)
-                    .then(CommandManager.argument("name", StringArgumentType.greedyString())
-                        .executes(context -> createContributionWithType(context, type))
+                .then(literal("e")
+                    .then(argument("id", StringArgumentType.word())
+                        .then(argument("player", StringArgumentType.word())
+                            .executes(this::executeAddPlayer)
+                        )
                     )
                 )
             );
         }
             
-        return builder;
-    }
-
-    /**
-     * 递归创建玩家参数，针对最新贡献
-     */
-    private ArgumentBuilder<ServerCommandSource, ?> createPlayerArgument(int index) {
-        return createPlayerArgument(index, false);
-    }
-
-    /**
-     * 递归创建玩家参数，支持无限添加
-     * @param index 参数索引
-     * @param needContributionId 是否需要贡献ID
-     */
-    private ArgumentBuilder<ServerCommandSource, ?> createPlayerArgument(int index, boolean needContributionId) {
-        String argName = "player" + index;
-        
-        // 设置最大递归深度，最多添加10个玩家
-        final int MAX_PLAYERS = 10;
-        
-        ArgumentBuilder<ServerCommandSource, ?> builder = CommandManager.argument(argName, StringArgumentType.word())
-            .suggests((context, suggestionsBuilder) -> {
-                ServerCommandSource source = context.getSource();
-                for (ServerPlayerEntity player : source.getServer().getPlayerManager().getPlayerList()) {
-                    suggestionsBuilder.suggest(player.getName().getString());
-                }
-                return suggestionsBuilder.buildFuture();
-            })
-            .executes(context -> {
-                if (needContributionId) {
-                    return processContributorsWithId(context, index);
-                } else {
-                    return processContributors(context, index);
-                }
-            });
-        
-        // 只有当索引小于最大限制时，才继续递归添加下一个玩家参数
-        if (index < MAX_PLAYERS) {
-            builder = builder.then(createPlayerArgument(index + 1, needContributionId));
-        }
-        
-        return builder;
-    }
-
-    /**
-     * 创建新贡献
-     */
-    private int createContribution(CommandContext<ServerCommandSource> context) throws CommandSyntaxException {
+    private int executeAddContribution(CommandContext<ServerCommandSource> context) {
         ServerCommandSource source = context.getSource();
-        ServerPlayerEntity player = source.getPlayer();
-        if (player == null) return 0;
-
-        try {
-            // 创建贡献
-            DatabaseManager.addContribution(
-                "新贡献", // 默认名称，可以后续修改
-                "默认类型",
-                null,
-                player.getX(),
-                player.getY(),
-                player.getZ(),
-                player.getWorld().getRegistryKey().getValue().toString(),
-                player.getUuid()
-            );
-
-            int contributionId = DatabaseManager.getLastInsertId();
-
-            // 添加创建者作为贡献者（level 1）
-            DatabaseManager.addContributor(contributionId, player.getUuid(), player.getName().getString(), "", null);
-
-            // 获取贡献对象
-            Contribution contribution = DatabaseManager.getContributionById(contributionId);
-            if (contribution != null) {
-                // 通知附近玩家
-                notifyNearbyPlayers(player, contribution);
-                // 广播WebSocket消息
-                WebSocketHandler.broadcastContributionUpdate(contribution);
-            }
-
-            source.sendMessage(Text.of("§a已创建新贡献（ID: " + contributionId + "）"));
-            return 1;
-        } catch (SQLException e) {
-            LOGGER.error("创建贡献失败", e);
-            source.sendMessage(Text.of("§c创建贡献失败：" + e.getMessage()));
+        
+        // 快速检查权限，防止明显无权限的操作阻塞主线程
+        if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+            source.sendError(Text.literal("只有玩家可以执行此命令"));
             return 0;
         }
-    }
 
-    /**
-     * 创建带类型的贡献
-     */
-    private int createContributionWithType(CommandContext<ServerCommandSource> context, String type) throws CommandSyntaxException {
-        ServerCommandSource source = context.getSource();
-        ServerPlayerEntity player = source.getPlayer();
-        if (player == null) return 0;
-        
+        // 获取参数
+        String type = StringArgumentType.getString(context, "type");
         String name = StringArgumentType.getString(context, "name");
-
-        try {
-            // 创建贡献
-            DatabaseManager.addContribution(
-                name,
-                type,
-                null,
-                player.getX(),
-                player.getY(),
-                player.getZ(),
-                player.getWorld().getRegistryKey().getValue().toString(),
-                player.getUuid()
-            );
-
-            int contributionId = DatabaseManager.getLastInsertId();
-
-            // 添加创建者作为贡献者（level 1）
-            DatabaseManager.addContributor(contributionId, player.getUuid(), player.getName().getString(), "", null);
-
-            // 获取贡献对象
-            Contribution contribution = DatabaseManager.getContributionById(contributionId);
-            if (contribution != null) {
-                // 通知附近玩家
-                notifyNearbyPlayers(player, contribution);
-                // 广播WebSocket消息
-                WebSocketHandler.broadcastContributionUpdate(contribution);
-            }
-
-            source.sendMessage(Text.of("§a已创建新贡献（ID: " + contributionId + "，类型: " + type + "，名称: " + name + "）"));
-            return 1;
-        } catch (SQLException e) {
-            LOGGER.error("创建贡献失败", e);
-            source.sendMessage(Text.of("§c创建贡献失败：" + e.getMessage()));
+        
+        // 验证贡献类型
+        if (!isValidType(type)) {
+            source.sendError(Text.literal("无效的贡献类型，有效类型: redstone, building, landmark, other"));
             return 0;
         }
-    }
-
-    /**
-     * 处理针对最新贡献的添加或邀请
-     */
-    private int processContributors(CommandContext<ServerCommandSource> context, int maxIndex) throws CommandSyntaxException {
-        ServerCommandSource source = context.getSource();
-        ServerPlayerEntity player = source.getPlayer();
-        if (player == null) return 0;
-
-        try {
-            // 获取创建者最后创建的贡献
-            List<Contribution> contributions = DatabaseManager.getAllContributionsByCreator(player.getUuid());
-            if (contributions.isEmpty()) {
-                source.sendMessage(Text.of("§c你还没有创建过贡献"));
-                return 0;
-            }
-
-            Contribution contribution = contributions.get(0); // 获取最新的贡献
-            return processContributorsById(context, maxIndex, player, contribution.getId());
-        } catch (SQLException e) {
-            LOGGER.error("处理贡献者失败", e);
-            source.sendMessage(Text.of("§c处理贡献者失败：" + e.getMessage()));
-            return 0;
-        }
-    }
-
-    /**
-     * 处理针对特定贡献ID的添加或邀请
-     */
-    private int processContributorsWithId(CommandContext<ServerCommandSource> context, int maxIndex) throws CommandSyntaxException {
-        ServerCommandSource source = context.getSource();
-        ServerPlayerEntity player = source.getPlayer();
-        if (player == null) return 0;
-
-        int contributionId = IntegerArgumentType.getInteger(context, "contributionId");
         
-        try {
-            // 检查贡献是否存在
-            Contribution contribution = DatabaseManager.getContributionById(contributionId);
-            if (contribution == null) {
-                source.sendMessage(Text.of("§c找不到ID为 " + contributionId + " 的贡献"));
-                return 0;
-            }
-            
-            // 检查是否是贡献者
-            ContributorInfo contributorInfo = DatabaseManager.getContributorInfo(contributionId, player.getUuid());
-            boolean isCreator = contribution.getCreatorUuid().equals(player.getUuid());
-            
-            if (!isCreator && contributorInfo == null) {
-                source.sendMessage(Text.of("§c你不是该贡献的贡献者，无法添加或邀请其他玩家"));
-                return 0;
-            }
-            
-            return processContributorsById(context, maxIndex, player, contributionId);
-        } catch (SQLException e) {
-            LOGGER.error("处理贡献者失败", e);
-            source.sendMessage(Text.of("§c处理贡献者失败：" + e.getMessage()));
-            return 0;
-        }
-    }
-
-    /**
-     * 根据贡献ID处理添加贡献者或发送邀请
-     */
-    private int processContributorsById(CommandContext<ServerCommandSource> context, int maxIndex, ServerPlayerEntity player, int contributionId) throws SQLException {
-        ServerCommandSource source = context.getSource();
+        // 显示处理提示
+        source.sendFeedback(() -> Text.literal("正在处理贡献创建请求...").formatted(Formatting.GOLD), false);
         
-        // 检查权限 - 确定是哪个级别的贡献者
-        boolean isAdmin = ContribPermissionManager.isAdmin(player);
-        boolean isCreator = DatabaseManager.isContributionCreator(contributionId, player.getUuid());
-        int contributorLevel = 0; // 默认不是贡献者
-
-        // 获取贡献者信息
-        ContributorInfo contributorInfo = null;
-        if (!isCreator && !isAdmin) {
-            contributorInfo = DatabaseManager.getContributorInfo(contributionId, player.getUuid());
-            if (contributorInfo != null) {
-                contributorLevel = contributorInfo.getLevel();
-            }
-        } else if (isCreator) {
-            contributorLevel = 1; // 创建者视为一级贡献者
-        }
-
-        // 管理员或一级贡献者可以直接添加
-        boolean canDirectlyAdd = isAdmin || isCreator || contributorLevel == 1;
-        
-        // 记录处理结果
-        List<String> addedPlayers = new ArrayList<>();
-        List<String> invitedPlayers = new ArrayList<>();
-        List<String> existingPlayers = new ArrayList<>();
-        List<String> notFoundPlayers = new ArrayList<>();
-
-        Contribution contribution = DatabaseManager.getContributionById(contributionId);
-
-        // 获取所有玩家名称并处理
-        for (int i = 1; i <= maxIndex; i++) {
-            String playerName = StringArgumentType.getString(context, "player" + i);
-            ServerPlayerEntity targetPlayer = source.getServer().getPlayerManager().getPlayer(playerName);
-            
-            if (targetPlayer == null) {
-                notFoundPlayers.add(playerName);
-                continue;
-            }
-            
-            // 检查目标玩家是否已经是贡献者
-            ContributorInfo existingContributor = DatabaseManager.getContributorInfo(contributionId, targetPlayer.getUuid());
-            if (existingContributor != null) {
-                existingPlayers.add(targetPlayer.getName().getString());
-                continue;
-            }
-
-            // 根据权限级别决定添加方式
-            if (canDirectlyAdd) {
-                // 直接添加贡献者
-                DatabaseManager.addContributor(
-                    contributionId,
-                    targetPlayer.getUuid(),
-                    targetPlayer.getName().getString(),
-                    "",  // 空字符串，没有note
-                    player.getUuid()
-                );
+        // 在工作线程中处理数据库操作
+        CompletableFuture.runAsync(() -> {
+            try {
+                UUID playerUUID = player.getUuid();
+                String playerName = player.getName().getString();
+                Vec3d pos = player.getPos();
+                String worldName = getWorldName(player.getWorld());
                 
-                addedPlayers.add(targetPlayer.getName().getString());
-                targetPlayer.sendMessage(Text.of("§a你已被添加为贡献者（级别：" + (contributorLevel + 1) + "）"));
-            } else {
-                // 发送邀请
-                sendInvitation(targetPlayer, player, contribution, contributorLevel);
-                invitedPlayers.add(targetPlayer.getName().getString());
+                // 创建贡献
+                Contribution contribution = new Contribution();
+                contribution.setType(type);
+                contribution.setName(name);
+                contribution.setX(pos.x);
+                contribution.setY(pos.y);
+                contribution.setZ(pos.z);
+                contribution.setWorld(worldName);
+                contribution.setCreatorUuid(playerUUID.toString());
+                contribution.setCreatorName(playerName);
+                
+                // 保存到数据库
+                long id = DatabaseManager.addContribution(contribution);
+                
+                if (id > 0) {
+                    // 添加创建者作为一级贡献者
+                    ContributorInfo creator = new ContributorInfo();
+                    creator.setPlayerUuid(playerUUID.toString());
+                    creator.setPlayerName(playerName);
+                    creator.setLevel(CREATOR_LEVEL);
+                    creator.setInviterUuid(null);
+                    
+                    DatabaseManager.addContributor(id, creator);
+                    
+                    contribution.setId(id);
+                    // 通知客户端
+                    source.getServer().execute(() -> {
+                        source.sendFeedback(() -> Text.literal(
+                            String.format("成功创建贡献: ID=%d, 类型=%s, 名称=%s", id, type, name)
+                        ).formatted(Formatting.GREEN), true);
+                    });
+                    
+                    // 广播更新
+                    com.example.contribtracker.websocket.WebSocketHandler.broadcastContributionUpdate(contribution);
+                } else {
+                    source.getServer().execute(() -> {
+                        source.sendError(Text.literal("创建贡献失败"));
+                    });
+                }
+            } catch (SQLException e) {
+                ContribTrackerMod.LOGGER.error("创建贡献时发生数据库错误", e);
+                source.getServer().execute(() -> {
+                    source.sendError(Text.literal("创建贡献时发生错误: " + e.getMessage()));
+                });
+            } catch (Exception e) {
+                ContribTrackerMod.LOGGER.error("创建贡献时发生错误", e);
+                source.getServer().execute(() -> {
+                    source.sendError(Text.literal("创建贡献时发生未知错误"));
+                });
             }
-        }
-
-        // 发送反馈信息
-        if (!addedPlayers.isEmpty()) {
-            source.sendMessage(Text.of("§a已直接添加贡献者：" + String.join(", ", addedPlayers)));
-        }
+        }, ContribTrackerMod.WORKER_POOL);
         
-        if (!invitedPlayers.isEmpty()) {
-            source.sendMessage(Text.of("§a已发送邀请给：" + String.join(", ", invitedPlayers)));
-        }
-        
-        if (!existingPlayers.isEmpty()) {
-            source.sendMessage(Text.of("§c以下玩家已经是贡献者：" + String.join(", ", existingPlayers)));
-        }
-        
-        if (!notFoundPlayers.isEmpty()) {
-            source.sendMessage(Text.of("§c未找到以下玩家：" + String.join(", ", notFoundPlayers)));
-        }
-
         return 1;
     }
 
-    /**
-     * 发送邀请给目标玩家
-     */
-    private void sendInvitation(ServerPlayerEntity targetPlayer, ServerPlayerEntity inviter, Contribution contribution, int inviterLevel) {
-        // 设置邀请者信息
-        contribution.setInviterUuid(inviter.getUuid());
-        contribution.setInviterLevel(inviterLevel);
+    private int executeAddContributionWithPlayer(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
         
-        // 发送邀请消息
-        targetPlayer.sendMessage(Text.of("§e§l=== 贡献邀请 ==="));
-        targetPlayer.sendMessage(Text.of("§f贡献名称：§a" + contribution.getName()));
-        targetPlayer.sendMessage(Text.of("§f贡献类型：§a" + contribution.getType()));
-        targetPlayer.sendMessage(Text.of("§f贡献ID：§a" + contribution.getId()));
-        targetPlayer.sendMessage(Text.of("§f邀请者：§a" + inviter.getName().getString()));
-        targetPlayer.sendMessage(Text.of("§f邀请者级别：§a" + inviterLevel));
-        targetPlayer.sendMessage(Text.of("§e§l================="));
+        // 快速检查权限
+        if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+            source.sendError(Text.literal("只有玩家可以执行此命令"));
+            return 0;
+        }
         
-        // 创建接受和拒绝按钮
-        Text acceptText = Text.literal("§2[接受邀请]")
-            .styled(style -> style
-                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker accept " + contribution.getId()))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击接受邀请")))
-            );
+        // 获取参数
+        String type = StringArgumentType.getString(context, "type");
+        String name = StringArgumentType.getString(context, "name");
+        String targetPlayerName = StringArgumentType.getString(context, "player");
         
-        Text rejectText = Text.literal("§c[拒绝邀请]")
-            .styled(style -> style
-                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker reject " + contribution.getId()))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击拒绝邀请")))
-            );
+        // 验证贡献类型
+        if (!isValidType(type)) {
+            source.sendError(Text.literal("无效的贡献类型，有效类型: redstone, building, landmark, other"));
+            return 0;
+        }
         
-        targetPlayer.sendMessage(Text.literal("").append(acceptText).append(" ").append(rejectText));
-        targetPlayer.sendMessage(Text.of("§e§l================="));
+        // 显示处理提示
+        source.sendFeedback(() -> Text.literal("正在处理贡献创建请求...").formatted(Formatting.GOLD), false);
         
-        // 存储邀请信息
-        Map<UUID, Contribution> pendingContributions = ContribTrackerMod.getPendingContributions();
-        Map<UUID, Long> contributionExpiryTimes = ContribTrackerMod.getContributionExpiryTimes();
+        // 在工作线程中处理
+        CompletableFuture.runAsync(() -> {
+            try {
+                UUID playerUUID = player.getUuid();
+                String playerName = player.getName().getString();
+                MinecraftServer server = source.getServer();
+                Vec3d pos = player.getPos();
+                String worldName = getWorldName(player.getWorld());
+                ServerPlayerEntity targetPlayer = server.getPlayerManager().getPlayer(targetPlayerName);
+                
+                Contribution contribution = new Contribution();
+                contribution.setType(type);
+                contribution.setName(name);
+                contribution.setX(pos.x);
+                contribution.setY(pos.y);
+                contribution.setZ(pos.z);
+                contribution.setWorld(worldName);
+                contribution.setCreatorUuid(playerUUID.toString());
+                contribution.setCreatorName(playerName);
+                
+                long id = DatabaseManager.addContribution(contribution);
+                
+                if (id > 0) {
+                    // 添加创建者作为一级贡献者
+                    ContributorInfo creator = new ContributorInfo();
+                    creator.setPlayerUuid(playerUUID.toString());
+                    creator.setPlayerName(playerName);
+                    creator.setLevel(CREATOR_LEVEL);
+                    creator.setInviterUuid(null);
+                    DatabaseManager.addContributor(id, creator);
+                    
+                    // 添加指定玩家为二级贡献者
+                    ContributorInfo contributor = new ContributorInfo();
+                    
+                    if (targetPlayer != null) {
+                        // 在线玩家
+                        contributor.setPlayerUuid(targetPlayer.getUuid().toString());
+                        contributor.setPlayerName(targetPlayer.getName().getString());
+                        contributor.setLevel(CONTRIBUTOR_LEVEL);
+                        contributor.setInviterUuid(playerUUID.toString());
+                        DatabaseManager.addContributor(id, contributor);
+                        
+                        server.execute(() -> {
+                            targetPlayer.sendMessage(Text.literal(
+                                String.format("你已被添加为贡献 %s (ID: %d) 的贡献者", name, id)
+                            ).formatted(Formatting.GREEN));
+                            
+                            source.sendFeedback(() -> Text.literal(
+                                String.format("成功创建贡献: ID=%d, 类型=%s, 名称=%s，并添加玩家 %s 为贡献者",
+                                    id, type, name, targetPlayer.getName().getString())
+                            ).formatted(Formatting.GREEN), true);
+                        });
+                    } else {
+                        // 尝试添加离线玩家
+                        List<ContributorInfo> offlinePlayerInfo = DatabaseManager.findPlayerByName(targetPlayerName);
+                        
+                        if (!offlinePlayerInfo.isEmpty()) {
+                            ContributorInfo offlinePlayer = offlinePlayerInfo.get(0);
+                            contributor.setPlayerUuid(offlinePlayer.getPlayerUuid());
+                            contributor.setPlayerName(offlinePlayer.getPlayerName());
+                            contributor.setLevel(CONTRIBUTOR_LEVEL);
+                            contributor.setInviterUuid(playerUUID.toString());
+                            DatabaseManager.addContributor(id, contributor);
+                            
+                            server.execute(() -> {
+                                source.sendFeedback(() -> Text.literal(
+                                    String.format("成功创建贡献: ID=%d, 类型=%s, 名称=%s，并添加离线玩家 %s 为贡献者",
+                                        id, type, name, offlinePlayer.getPlayerName())
+                                ).formatted(Formatting.GREEN), true);
+                            });
+                        } else {
+                            server.execute(() -> {
+                                source.sendError(Text.literal("找不到玩家: " + targetPlayerName));
+                            });
+                        }
+                    }
+                    
+                    // 获取完整贡献信息并广播
+                    Contribution updatedContribution = DatabaseManager.getContributionById(id);
+                    if (updatedContribution != null) {
+                        com.example.contribtracker.websocket.WebSocketHandler.broadcastContributionUpdate(updatedContribution);
+                    }
+                } else {
+                    server.execute(() -> {
+                        source.sendError(Text.literal("创建贡献失败"));
+                    });
+                }
+            } catch (SQLException e) {
+                ContribTrackerMod.LOGGER.error("创建贡献时发生数据库错误", e);
+                source.getServer().execute(() -> {
+                    source.sendError(Text.literal("创建贡献时发生错误: " + e.getMessage()));
+                });
+            } catch (Exception e) {
+                ContribTrackerMod.LOGGER.error("创建贡献时发生错误", e);
+                source.getServer().execute(() -> {
+                    source.sendError(Text.literal("创建贡献时发生未知错误"));
+                });
+            }
+        }, ContribTrackerMod.WORKER_POOL);
         
-        pendingContributions.put(targetPlayer.getUuid(), contribution);
-        contributionExpiryTimes.put(targetPlayer.getUuid(), System.currentTimeMillis());
+            return 1;
     }
 
-    /**
-     * 通知附近玩家
-     */
-    private void notifyNearbyPlayers(ServerPlayerEntity player, Contribution contribution) {
-        Vec3d pos = player.getPos();
-        Box box = new Box(pos.add(-32, -32, -32), pos.add(32, 32, 32));
-        List<PlayerEntity> nearbyPlayers = player.getWorld().getEntitiesByType(
-            net.minecraft.entity.EntityType.PLAYER,
-            box,
-            p -> p != player
-        );
+    private int executeAddPlayer(CommandContext<ServerCommandSource> context) {
+        ServerCommandSource source = context.getSource();
+        
+        // 快速基本检查
+        if (!(source.getEntity() instanceof ServerPlayerEntity player)) {
+            source.sendError(Text.literal("只有玩家可以执行此命令"));
+                return 0;
+            }
 
-        for (PlayerEntity nearbyPlayer : nearbyPlayers) {
-            nearbyPlayer.sendMessage(Text.of("§e§l=== 附近有新贡献 ==="));
-            nearbyPlayer.sendMessage(Text.of("§f贡献名称：§a" + contribution.getName()));
-            nearbyPlayer.sendMessage(Text.of("§f贡献类型：§a" + contribution.getType()));
-            nearbyPlayer.sendMessage(Text.of("§f贡献ID：§a" + contribution.getId()));
-            nearbyPlayer.sendMessage(Text.of("§f创建者：§a" + player.getName().getString()));
-            nearbyPlayer.sendMessage(Text.of("§e§l================="));
+        // 获取参数
+        String idStr = StringArgumentType.getString(context, "id");
+        String targetPlayerName = StringArgumentType.getString(context, "player");
+        long contributionId;
+        
+        try {
+            contributionId = Long.parseLong(idStr);
+        } catch (NumberFormatException e) {
+            source.sendError(Text.literal("无效的贡献ID，必须是数字"));
+            return 0;
+        }
+        
+        // 显示处理提示
+        source.sendFeedback(() -> Text.literal("正在处理添加贡献者请求...").formatted(Formatting.GOLD), false);
+        
+        // 在工作线程中处理
+        CompletableFuture.runAsync(() -> {
+            try {
+                UUID playerUUID = player.getUuid();
+                String playerName = player.getName().getString();
+                MinecraftServer server = source.getServer();
+                
+            // 检查贡献是否存在
+            Contribution contribution = DatabaseManager.getContributionById(contributionId);
+            if (contribution == null) {
+                    server.execute(() -> {
+                        source.sendError(Text.literal("找不到ID为 " + contributionId + " 的贡献"));
+                    });
+                    return;
+                }
+                
+                // 检查权限
+                int playerLevel = ContribPermissionManager.getContributorLevel(contributionId, playerUUID.toString());
+                boolean isAdmin = source.hasPermissionLevel(2);
+                
+                if (!isAdmin && playerLevel > CREATOR_LEVEL) {
+                    server.execute(() -> {
+                        source.sendError(Text.literal("你没有权限添加贡献者"));
+                    });
+                    return;
+                }
+                
+                ServerPlayerEntity targetPlayer = server.getPlayerManager().getPlayer(targetPlayerName);
+                
+                if (targetPlayer != null || isAdmin || playerLevel <= CREATOR_LEVEL) {
+                    // 管理员、创建者或一级贡献者可以直接添加贡献者
+                    addContributor(source, contribution, playerUUID, targetPlayerName, targetPlayer);
+                } else {
+                    // 其他贡献者只能发送邀请
+                    if (targetPlayer == null) {
+                        server.execute(() -> {
+                            source.sendError(Text.literal("无法邀请离线玩家: " + targetPlayerName));
+                        });
+                        return;
+                    }
+                    
+                    // 生成邀请
+                    UUID inviteId = UUID.randomUUID();
+                    ContribTrackerMod.getPendingContributions().put(inviteId, contribution);
+                    ContribTrackerMod.getContributionExpiryTimes().put(inviteId, System.currentTimeMillis());
+                    
+                    server.execute(() -> {
+                        // 发送邀请
+                        targetPlayer.sendMessage(Text.literal(
+                            String.format("%s 邀请你加入贡献 %s (ID: %d)",
+                                playerName, contribution.getName(), contribution.getId())
+                        ).formatted(Formatting.GOLD));
+                        
+                        targetPlayer.sendMessage(Text.literal(
+                            String.format("输入 /contribtracker accept %s 接受邀请", inviteId)
+                        ).formatted(Formatting.GOLD));
+                        
+                        targetPlayer.sendMessage(Text.literal(
+                            String.format("输入 /contribtracker reject %s 拒绝邀请", inviteId)
+                        ).formatted(Formatting.GOLD));
+                        
+                        targetPlayer.sendMessage(Text.literal("邀请将在5分钟后过期").formatted(Formatting.GRAY));
+                        
+                        source.sendFeedback(() -> Text.literal(
+                            String.format("已向 %s 发送贡献邀请，ID: %s", targetPlayer.getName().getString(), inviteId)
+                        ).formatted(Formatting.GREEN), false);
+                    });
+                }
+            } catch (SQLException e) {
+                ContribTrackerMod.LOGGER.error("添加贡献者时发生数据库错误", e);
+                source.getServer().execute(() -> {
+                    source.sendError(Text.literal("添加贡献者时发生错误: " + e.getMessage()));
+                });
+            } catch (Exception e) {
+                ContribTrackerMod.LOGGER.error("添加贡献者时发生错误", e);
+                source.getServer().execute(() -> {
+                    source.sendError(Text.literal("添加贡献者时发生未知错误"));
+                });
+            }
+        }, ContribTrackerMod.WORKER_POOL);
+        
+        return 1;
+    }
+
+    private void addContributor(ServerCommandSource source, Contribution contribution, UUID inviterUUID, 
+                              String targetPlayerName, ServerPlayerEntity targetPlayer) throws SQLException {
+        MinecraftServer server = source.getServer();
+        ContributorInfo contributor = new ContributorInfo();
+        
+        if (targetPlayer != null) {
+            // 在线玩家
+            contributor.setPlayerUuid(targetPlayer.getUuid().toString());
+            contributor.setPlayerName(targetPlayer.getName().getString());
+            contributor.setLevel(CONTRIBUTOR_LEVEL);
+            contributor.setInviterUuid(inviterUUID.toString());
             
-            // 创建接受和拒绝按钮
-            Text acceptText = Text.literal("§2[加入贡献]")
-                .styled(style -> style
-                    .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker accept " + contribution.getId()))
-                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击加入贡献")))
-                );
+            // 检查是否已经是贡献者
+            if (DatabaseManager.isContributor(contribution.getId(), targetPlayer.getUuid().toString())) {
+                server.execute(() -> {
+                    source.sendError(Text.literal(targetPlayer.getName().getString() + " 已经是此贡献的贡献者"));
+                });
+                return;
+            }
             
-            Text rejectText = Text.literal("§c[拒绝邀请]")
-                .styled(style -> style
-                    .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/contribtracker reject " + contribution.getId()))
-                    .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.of("点击拒绝邀请")))
-                );
+            DatabaseManager.addContributor(contribution.getId(), contributor);
             
-            nearbyPlayer.sendMessage(Text.literal("").append(acceptText).append(" ").append(rejectText));
-            nearbyPlayer.sendMessage(Text.of("§e§l================="));
+            server.execute(() -> {
+                targetPlayer.sendMessage(Text.literal(
+                    String.format("你已被添加为贡献 %s (ID: %d) 的贡献者", 
+                        contribution.getName(), contribution.getId())
+                ).formatted(Formatting.GREEN));
+                
+                source.sendFeedback(() -> Text.literal(
+                    String.format("已将 %s 添加为贡献 %s (ID: %d) 的贡献者",
+                        targetPlayer.getName().getString(), contribution.getName(), contribution.getId())
+                ).formatted(Formatting.GREEN), true);
+            });
+        } else {
+            // 尝试添加离线玩家
+            List<ContributorInfo> offlinePlayerInfo = DatabaseManager.findPlayerByName(targetPlayerName);
             
-            // 将附近玩家添加到待邀请列表
-            Map<UUID, Contribution> pendingContributions = ContribTrackerMod.getPendingContributions();
-            Map<UUID, Long> contributionExpiryTimes = ContribTrackerMod.getContributionExpiryTimes();
-            
-            pendingContributions.put(nearbyPlayer.getUuid(), contribution);
-            contributionExpiryTimes.put(nearbyPlayer.getUuid(), System.currentTimeMillis());
+            if (!offlinePlayerInfo.isEmpty()) {
+                ContributorInfo offlinePlayer = offlinePlayerInfo.get(0);
+                
+                // 检查是否已经是贡献者
+                if (DatabaseManager.isContributor(contribution.getId(), offlinePlayer.getPlayerUuid())) {
+                    server.execute(() -> {
+                        source.sendError(Text.literal(offlinePlayer.getPlayerName() + " 已经是此贡献的贡献者"));
+                    });
+                    return;
+                }
+                
+                contributor.setPlayerUuid(offlinePlayer.getPlayerUuid());
+                contributor.setPlayerName(offlinePlayer.getPlayerName());
+                contributor.setLevel(CONTRIBUTOR_LEVEL);
+                contributor.setInviterUuid(inviterUUID.toString());
+                DatabaseManager.addContributor(contribution.getId(), contributor);
+                
+                server.execute(() -> {
+                    source.sendFeedback(() -> Text.literal(
+                        String.format("已将离线玩家 %s 添加为贡献 %s (ID: %d) 的贡献者",
+                            offlinePlayer.getPlayerName(), contribution.getName(), contribution.getId())
+                    ).formatted(Formatting.GREEN), true);
+                });
+            } else {
+                server.execute(() -> {
+                    source.sendError(Text.literal("找不到玩家: " + targetPlayerName));
+                });
+                return;
+            }
+        }
+        
+        // 广播更新
+        Contribution updatedContribution = DatabaseManager.getContributionById(contribution.getId());
+        if (updatedContribution != null) {
+            com.example.contribtracker.websocket.WebSocketHandler.broadcastContributionUpdate(updatedContribution);
+        }
+    }
+    
+    private boolean isValidType(String type) {
+        return type.equalsIgnoreCase("redstone") || 
+               type.equalsIgnoreCase("building") || 
+               type.equalsIgnoreCase("landmark") || 
+               type.equalsIgnoreCase("other");
+    }
+    
+    private String getWorldName(World world) {
+        RegistryKey<World> key = world.getRegistryKey();
+        
+        if (key == World.OVERWORLD) {
+            return "overworld";
+        } else if (key == World.NETHER) {
+            return "the_nether";
+        } else if (key == World.END) {
+            return "the_end";
+        } else {
+            return key.getValue().toString();
         }
     }
 } 

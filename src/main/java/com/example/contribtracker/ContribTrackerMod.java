@@ -17,10 +17,16 @@ import com.example.contribtracker.command.DeleteCommand;
 import com.example.contribtracker.command.ListCommand;
 import com.example.contribtracker.command.AcceptCommand;
 import com.example.contribtracker.command.RejectCommand;
+import com.example.contribtracker.command.RemoveCommand;
+import com.example.contribtracker.command.NearCommand;
 import com.example.contribtracker.websocket.WebSocketHandler;
 import com.example.contribtracker.config.WebSocketConfig;
+import com.example.contribtracker.util.LogHelper;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
 import java.io.File;
 import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -34,38 +40,81 @@ public class ContribTrackerMod implements ModInitializer {
     private static final Map<UUID, Contribution> pendingContributions = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> contributionExpiryTimes = new ConcurrentHashMap<>();
     private static final long INVITATION_EXPIRY_TIME = 5 * 60 * 1000;
-    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
+    
+    // 高效线程池配置
+    private static final int CORE_POOL_SIZE = 2;
+    private static final int MAX_POOL_SIZE = 4;
+    private static final int QUEUE_CAPACITY = 100;
+    
+    // 线程池
+    public static final ExecutorService WORKER_POOL = Executors.newFixedThreadPool(MAX_POOL_SIZE, r -> {
+        Thread thread = new Thread(r);
+        thread.setName("ContribTracker-Worker");
+        thread.setDaemon(true);
+        return thread;
+    });
+    
+    // 定时任务线程池
+    private static final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1, r -> {
+        Thread thread = new Thread(r);
+        thread.setName("ContribTracker-Scheduler");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     @Override
     public void onInitialize() {
-        // 设置线程名称
-        Thread.currentThread().setName("ContribTracker");
+        // 初始化配置目录
+        setupConfigDirectories();
         
+        // 注册命令
+        registerCommands();
+        
+        // 异步初始化数据库和WebSocket
+        WORKER_POOL.execute(() -> {
+            try {
+                LogHelper.info("异步初始化数据库...");
+                DatabaseManager.initialize();
+                LogHelper.info("数据库初始化成功");
+            } catch (Exception e) {
+                LogHelper.error("数据库初始化失败", e);
+            }
+        });
+        
+        WORKER_POOL.execute(() -> {
+            try {
+                LogHelper.info("异步初始化WebSocket...");
+                WebSocketHandler.initialize();
+                LogHelper.info("WebSocket初始化成功");
+            } catch (Exception e) {
+                LogHelper.error("WebSocket初始化失败", e);
+            }
+        });
+        
+        // 注册生命周期事件
+        registerLifecycleEvents();
+        
+        // 启动定时任务
+        startScheduledTasks();
+        
+        LogHelper.info("模组初始化完成");
+    }
+    
+    private void setupConfigDirectories() {
         try {
-            // 初始化数据库
-            DatabaseManager.initialize();
-            LOGGER.info("数据库初始化成功");
-            
-            // 初始化WebSocket
-            WebSocketHandler.initialize();
-            LOGGER.info("WebSocket初始化成功");
-            
-            // 注册命令
-            registerCommands();
-            
-            // 注册服务器停止事件
-            ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
-                try {
-                    DatabaseManager.close();
-                    LOGGER.info("数据库连接已关闭");
-                } catch (SQLException e) {
-                    LOGGER.error("关闭数据库连接失败", e);
-                }
-            });
-            
+            File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "null_city/contributions");
+            if (!configDir.exists()) {
+                configDir.mkdirs();
+            }
+            LogHelper.info("配置目录创建成功: {}", configDir.getAbsolutePath());
         } catch (Exception e) {
-            LOGGER.error("模组初始化失败", e);
+            LogHelper.error("创建配置目录失败", e);
         }
+    }
+
+    private void registerLifecycleEvents() {
+        ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
+        ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
     }
 
     private void onServerStarting(MinecraftServer server) {
@@ -74,8 +123,39 @@ public class ContribTrackerMod implements ModInitializer {
 
     private void onServerStopping(MinecraftServer server) {
         try {
+            LogHelper.info("正在关闭资源...");
+            // 关闭WebSocket服务
+            WebSocketHandler.shutdown();
+            
+            // 关闭数据库连接
             DatabaseManager.close();
-        } catch (SQLException e) {
+            
+            // 关闭线程池
+            shutdownThreadPools();
+            
+            LogHelper.info("资源已安全关闭");
+        } catch (Exception e) {
+            LogHelper.error("关闭资源时发生错误", e);
+        }
+    }
+    
+    private void shutdownThreadPools() {
+        try {
+            // 优雅关闭线程池
+            scheduler.shutdown();
+            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                scheduler.shutdownNow();
+            }
+            
+            WORKER_POOL.shutdown();
+            if (!WORKER_POOL.awaitTermination(5, TimeUnit.SECONDS)) {
+                WORKER_POOL.shutdownNow();
+            }
+            
+            LogHelper.info("线程池已成功关闭");
+        } catch (InterruptedException e) {
+            LogHelper.error("关闭线程池时被中断", e);
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -92,9 +172,8 @@ public class ContribTrackerMod implements ModInitializer {
     }
 
     private void startScheduledTasks() {
-        ServerLifecycleEvents.SERVER_STARTING.register(this::onServerStarting);
-        ServerLifecycleEvents.SERVER_STOPPING.register(this::onServerStopping);
-        ServerTickEvents.START_SERVER_TICK.register(server -> {
+        // 邀请过期检查
+        scheduler.scheduleAtFixedRate(() -> {
             long currentTime = System.currentTimeMillis();
             contributionExpiryTimes.entrySet().removeIf(entry -> {
                 if (currentTime - entry.getValue() > INVITATION_EXPIRY_TIME) {
@@ -103,7 +182,9 @@ public class ContribTrackerMod implements ModInitializer {
                 }
                 return false;
             });
-        });
+        }, 60, 60, TimeUnit.SECONDS);
+        
+        LogHelper.info("定时任务已启动");
     }
 
     private void registerCommands() {
@@ -113,6 +194,10 @@ public class ContribTrackerMod implements ModInitializer {
             dispatcher.register(new ListCommand().register());
             dispatcher.register(new AcceptCommand().register());
             dispatcher.register(new RejectCommand().register());
+            dispatcher.register(new RemoveCommand().register());
+            dispatcher.register(new NearCommand().register());
         });
+        
+        LogHelper.info("命令注册完成");
     }
 } 
