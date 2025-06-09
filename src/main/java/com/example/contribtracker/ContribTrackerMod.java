@@ -32,6 +32,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.ServerCommandSource;
+import java.util.concurrent.CompletableFuture;
 
 public class ContribTrackerMod implements ModInitializer {
     public static final String MOD_ID = "contribtracker";
@@ -67,37 +68,32 @@ public class ContribTrackerMod implements ModInitializer {
         // 初始化配置目录
         setupConfigDirectories();
             
-            // 注册命令
-            registerCommands();
+        // 注册命令
+        registerCommands();
             
         // 异步初始化数据库和WebSocket
-        WORKER_POOL.execute(() -> {
-                try {
-                LogHelper.info("异步初始化数据库...");
+        CompletableFuture<Void> dbInitFuture = CompletableFuture.runAsync(() -> {
+            try {
                 DatabaseManager.initialize();
-                LogHelper.info("数据库初始化成功");
             } catch (Exception e) {
                 LogHelper.error("数据库初始化失败", e);
-                }
-            });
+            }
+        }, WORKER_POOL);
             
-        WORKER_POOL.execute(() -> {
+        // 数据库初始化完成后再初始化WebSocket
+        dbInitFuture.thenRunAsync(() -> {
             try {
-                LogHelper.info("异步初始化WebSocket...");
                 WebSocketHandler.initialize();
-                LogHelper.info("WebSocket初始化成功");
             } catch (Exception e) {
                 LogHelper.error("WebSocket初始化失败", e);
             }
-        });
+        }, WORKER_POOL);
         
         // 注册生命周期事件
         registerLifecycleEvents();
         
         // 启动定时任务
         startScheduledTasks();
-        
-        LogHelper.info("模组初始化完成");
     }
     
     private void setupConfigDirectories() {
@@ -106,7 +102,7 @@ public class ContribTrackerMod implements ModInitializer {
             if (!configDir.exists()) {
                 configDir.mkdirs();
             }
-            LogHelper.info("配置目录创建成功: {}", configDir.getAbsolutePath());
+            LogHelper.debug("配置目录创建成功: {}", configDir.getAbsolutePath());
         } catch (Exception e) {
             LogHelper.error("创建配置目录失败", e);
         }
@@ -123,7 +119,6 @@ public class ContribTrackerMod implements ModInitializer {
 
     private void onServerStopping(MinecraftServer server) {
         try {
-            LogHelper.info("正在关闭资源...");
             // 关闭WebSocket服务
             WebSocketHandler.shutdown();
             
@@ -133,7 +128,6 @@ public class ContribTrackerMod implements ModInitializer {
             // 关闭线程池
             shutdownThreadPools();
             
-            LogHelper.info("资源已安全关闭");
         } catch (Exception e) {
             LogHelper.error("关闭资源时发生错误", e);
         }
@@ -152,7 +146,6 @@ public class ContribTrackerMod implements ModInitializer {
                 WORKER_POOL.shutdownNow();
             }
             
-            LogHelper.info("线程池已成功关闭");
         } catch (InterruptedException e) {
             LogHelper.error("关闭线程池时被中断", e);
             Thread.currentThread().interrupt();
@@ -184,7 +177,6 @@ public class ContribTrackerMod implements ModInitializer {
             });
         }, 60, 60, TimeUnit.SECONDS);
         
-        LogHelper.info("定时任务已启动");
     }
 
     private void registerCommands() {
@@ -198,6 +190,5 @@ public class ContribTrackerMod implements ModInitializer {
             dispatcher.register(new NearCommand().register());
         });
         
-        LogHelper.info("命令注册完成");
     }
 } 

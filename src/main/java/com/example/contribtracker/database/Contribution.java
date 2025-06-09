@@ -58,7 +58,7 @@ public class Contribution {
     public Contribution() {
         this.contributorList = new ArrayList<>();
     }
-    
+
     /**
      * 创建当前贡献对象的深拷贝
      * @return 当前对象的深拷贝

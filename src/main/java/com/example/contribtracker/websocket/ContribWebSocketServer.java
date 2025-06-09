@@ -6,6 +6,7 @@ import org.java_websocket.server.WebSocketServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.example.contribtracker.ContribTrackerMod;
+import com.example.contribtracker.util.LogHelper;
 
 import java.net.InetSocketAddress;
 import java.util.concurrent.ConcurrentHashMap;
@@ -52,7 +53,6 @@ public abstract class ContribWebSocketServer extends WebSocketServer {
 
     @Override
     public void onStart() {
-        LOGGER.info("WebSocket服务器启动成功");
     }
 
     public abstract void onOpen(WebSocketSession session);

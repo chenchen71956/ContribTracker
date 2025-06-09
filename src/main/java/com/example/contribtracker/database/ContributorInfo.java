@@ -3,6 +3,9 @@ package com.example.contribtracker.database;
 import com.google.gson.annotations.SerializedName;
 import java.util.UUID;
 
+/**
+ * 贡献者信息类
+ */
 public class ContributorInfo {
     @SerializedName("playerUuid")
     private UUID playerUuid;
@@ -11,10 +14,13 @@ public class ContributorInfo {
     private String playerName;
     
     @SerializedName("level")
-    private int level;
+    private int level = 1;
     
     @SerializedName("inviterUuid")
     private UUID inviterUuid;
+    
+    @SerializedName("contributionId")
+    private int contributionId;
 
     public UUID getPlayerUuid() {
         return playerUuid;
@@ -46,5 +52,13 @@ public class ContributorInfo {
 
     public void setInviterUuid(UUID inviterUuid) {
         this.inviterUuid = inviterUuid;
+    }
+    
+    public int getContributionId() {
+        return contributionId;
+    }
+    
+    public void setContributionId(int contributionId) {
+        this.contributionId = contributionId;
     }
 } 

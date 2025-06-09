@@ -42,6 +42,7 @@ public class WebSocketHandler {
     private static volatile List<Contribution> cachedContributions = Collections.emptyList();
     private static volatile long cacheTimestamp = 0;
     private static final long CACHE_EXPIRY = 5000; // 5秒缓存
+    private static final long DB_CHECK_INTERVAL = 1000; // 每秒检查数据库是否初始化
 
     public static void initialize() {
         if (isRunning.get()) {
@@ -53,8 +54,8 @@ public class WebSocketHandler {
             // 从URL中提取端口号
             int port = Integer.parseInt(url.split(":")[2].split("/")[0]);
             
-            // 预热缓存
-            refreshCache();
+            // 添加端口可用性检测和自动选择
+            port = findAvailablePort(port);
             
             // 启动WebSocket服务器
             startServer(port);
@@ -62,19 +63,52 @@ public class WebSocketHandler {
             // 启动心跳检查
             startHeartbeat();
             
+            // 定期尝试预热缓存，直到成功
+            scheduleInitialCacheRefresh();
+            
             isRunning.set(true);
-            LogHelper.info("WebSocket服务器启动成功，监听端口: {}", port);
+            LogHelper.websocketUrl("ContribTrackerMod连接地址为：{}", url);
         } catch (Exception e) {
             LogHelper.error("WebSocket服务器启动失败", e);
         }
+    }
+    
+    private static void scheduleInitialCacheRefresh() {
+        ScheduledExecutorService initScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread thread = new Thread(r);
+            thread.setName("ContribTracker-Cache-Initializer");
+            thread.setDaemon(true);
+            return thread;
+        });
+        
+        final AtomicBoolean initialized = new AtomicBoolean(false);
+        
+        initScheduler.scheduleAtFixedRate(() -> {
+            if (initialized.get()) {
+                initScheduler.shutdown();
+                return;
+            }
+            
+            try {
+                refreshCache();
+                initialized.set(true);
+                initScheduler.shutdown();
+            } catch (Exception e) {
+                LogHelper.debug("等待数据库初始化以刷新缓存...");
+            }
+        }, 0, DB_CHECK_INTERVAL, TimeUnit.MILLISECONDS);
     }
 
     private static void refreshCache() {
         CompletableFuture.runAsync(() -> {
             try {
+                if (!DatabaseManager.isInitialized()) {
+                    LogHelper.debug("数据库尚未初始化，跳过缓存刷新");
+                    return;
+                }
+                
                 cachedContributions = DatabaseManager.getAllContributions();
                 cacheTimestamp = System.currentTimeMillis();
-                LogHelper.debug("已刷新贡献数据缓存");
             } catch (SQLException e) {
                 LogHelper.error("刷新数据缓存失败", e);
             }
@@ -136,10 +170,10 @@ public class WebSocketHandler {
             message.addProperty("type", "all_data");
             message.add("data", gson.toJsonTree(contributions));
             session.send(gson.toJson(message));
-            LogHelper.debug("已发送所有数据到客户端: {}", session.getRemoteAddress());
+            LogHelper.debug("已发送所有贡献数据到客户端: {}", session.getRemoteAddress());
         } catch (Exception e) {
-            LogHelper.error("发送所有数据失败", e);
-            sendError(session, "获取数据失败");
+            LogHelper.error("发送所有贡献数据失败", e);
+            sendError(session, "获取贡献数据失败");
         }
     }
     
@@ -312,9 +346,31 @@ public class WebSocketHandler {
             lastPongTimes.clear();
             cachedContributions.clear();
             isRunning.set(false);
-            LogHelper.info("WebSocket服务器已安全关闭");
         } catch (Exception e) {
             LogHelper.error("关闭WebSocket服务器时出错", e);
         }
+    }
+
+    /**
+     * 查找可用的端口
+     * @param startPort 起始端口号
+     * @return 可用的端口号
+     */
+    private static int findAvailablePort(int startPort) {
+        int port = startPort;
+        int maxPort = startPort + 100; // 最多尝试100个端口
+        
+        while (port < maxPort) {
+            try {
+                java.net.ServerSocket serverSocket = new java.net.ServerSocket(port);
+                serverSocket.close();
+                return port;
+            } catch (java.io.IOException e) {
+                port++;
+            }
+        }
+        
+        LogHelper.warn("无法找到可用端口，尝试使用默认端口 {}", startPort);
+        return startPort;
     }
 } 

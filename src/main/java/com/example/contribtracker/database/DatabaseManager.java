@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.sql.*;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 import org.sqlite.SQLiteConfig;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class DatabaseManager {
     private static final Logger LOGGER = LoggerFactory.getLogger(ContribTrackerMod.MOD_ID);
@@ -29,14 +31,16 @@ public class DatabaseManager {
     private static final Map<Integer, Contribution> contributionByIdCache = new ConcurrentHashMap<>(); 
     private static final Map<String, Long> lastCacheUpdateTime = new ConcurrentHashMap<>();
     private static final long CACHE_EXPIRE_TIME = 5000; // 缓存过期时间：5秒
+    // 状态追踪
+    private static final AtomicBoolean isInitialized = new AtomicBoolean(false);
 
     public static void initialize() throws SQLException {
         try {
             // 确保目录存在
-        File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "null_city/contributions");
-        if (!configDir.exists()) {
-            configDir.mkdirs();
-        }
+            File configDir = new File(FabricLoader.getInstance().getConfigDir().toFile(), "null_city/contributions");
+            if (!configDir.exists()) {
+                configDir.mkdirs();
+            }
             
             // 设置数据库文件
             dbFile = new File(configDir, "contributions.db");
@@ -67,13 +71,20 @@ public class DatabaseManager {
             dataSource = new HikariDataSource(config);
             
             // 创建表
-        createTables();
+            createTables();
             
-            LOGGER.info("数据库连接池已初始化，最大连接数: {}", config.getMaximumPoolSize());
+            isInitialized.set(true);
         } catch (Exception e) {
-            LOGGER.error("初始化数据库连接池失败", e);
             throw new SQLException("数据库初始化失败", e);
         }
+    }
+
+    /**
+     * 检查数据库连接池是否已经初始化
+     * @return 如果数据库连接池已初始化则返回true
+     */
+    public static boolean isInitialized() {
+        return isInitialized.get() && dataSource != null && !dataSource.isClosed();
     }
 
     private static void createTables() throws SQLException {
@@ -95,7 +106,7 @@ public class DatabaseManager {
                 )
             """);
 
-            // 创建贡献者表
+            // 创建贡献者表 - 修复外键约束
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS contributors (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,10 +116,132 @@ public class DatabaseManager {
                     note TEXT,
                     inviter_uuid TEXT,
                     level INTEGER DEFAULT 1,
-                    FOREIGN KEY (contribution_id) REFERENCES contributions(id),
-                    FOREIGN KEY (inviter_uuid) REFERENCES contributors(player_uuid)
+                    FOREIGN KEY (contribution_id) REFERENCES contributions(id) ON DELETE CASCADE,
+                    UNIQUE (contribution_id, player_uuid)
                 )
             """);
+            
+            // 检查表结构是否需要升级
+            upgradeTablesIfNeeded(conn);
+        }
+    }
+
+    /**
+     * 检查并升级表结构
+     * @param conn 数据库连接
+     * @throws SQLException 如果升级失败
+     */
+    private static void upgradeTablesIfNeeded(Connection conn) throws SQLException {
+        try {
+            boolean needsUpgrade = false;
+            
+            // 检查外键约束问题
+            try (Statement stmt = conn.createStatement();
+                 ResultSet rs = stmt.executeQuery("PRAGMA foreign_key_list(contributors)")) {
+                while (rs.next()) {
+                    String table = rs.getString("table");
+                    if ("contributors".equals(table)) {
+                        needsUpgrade = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (needsUpgrade) {
+                // 获取当前所有数据
+                List<Contribution> allContributions = new ArrayList<>();
+                List<ContributorInfo> allContributors = new ArrayList<>();
+                
+                // 获取所有贡献和贡献者
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT * FROM contributions")) {
+                    while (rs.next()) {
+                        Contribution c = new Contribution();
+                        c.setId(rs.getInt("id"));
+                        c.setName(rs.getString("name"));
+                        c.setType(rs.getString("type"));
+                        c.setGameId(rs.getString("game_id"));
+                        c.setX(rs.getDouble("x"));
+                        c.setY(rs.getDouble("y"));
+                        c.setZ(rs.getDouble("z"));
+                        c.setWorld(rs.getString("world"));
+                        c.setCreatorUuid(UUID.fromString(rs.getString("creator_uuid")));
+                        c.setCreatedAt(rs.getTimestamp("created_at").getTime());
+                        allContributions.add(c);
+                    }
+                }
+                
+                try (Statement stmt = conn.createStatement();
+                     ResultSet rs = stmt.executeQuery("SELECT * FROM contributors")) {
+                    while (rs.next()) {
+                        ContributorInfo ci = new ContributorInfo();
+                        ci.setContributionId(rs.getInt("contribution_id"));
+                        ci.setPlayerUuid(UUID.fromString(rs.getString("player_uuid")));
+                        ci.setPlayerName(rs.getString("player_name"));
+                        ci.setLevel(rs.getInt("level"));
+                        String inviterUuid = rs.getString("inviter_uuid");
+                        if (inviterUuid != null) {
+                            ci.setInviterUuid(UUID.fromString(inviterUuid));
+                        }
+                        allContributors.add(ci);
+                    }
+                }
+                
+                // 关闭外键约束
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("PRAGMA foreign_keys = OFF");
+                }
+                
+                // 删除旧表并创建新表
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("DROP TABLE IF EXISTS contributors");
+                    stmt.execute("""
+                        CREATE TABLE contributors (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            contribution_id INTEGER NOT NULL,
+                            player_uuid TEXT NOT NULL,
+                            player_name TEXT NOT NULL,
+                            note TEXT,
+                            inviter_uuid TEXT,
+                            level INTEGER DEFAULT 1,
+                            FOREIGN KEY (contribution_id) REFERENCES contributions(id) ON DELETE CASCADE,
+                            UNIQUE (contribution_id, player_uuid)
+                        )
+                    """);
+                }
+                
+                // 重新插入数据
+                String insertSQL = """
+                    INSERT INTO contributors 
+                    (contribution_id, player_uuid, player_name, note, inviter_uuid, level)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """;
+                
+                try (PreparedStatement pstmt = conn.prepareStatement(insertSQL)) {
+                    for (ContributorInfo ci : allContributors) {
+                        pstmt.setInt(1, ci.getContributionId());
+                        pstmt.setString(2, ci.getPlayerUuid().toString());
+                        pstmt.setString(3, ci.getPlayerName());
+                        pstmt.setString(4, null); // note
+                        if (ci.getInviterUuid() != null) {
+                            pstmt.setString(5, ci.getInviterUuid().toString());
+                        } else {
+                            pstmt.setNull(5, Types.VARCHAR);
+                        }
+                        pstmt.setInt(6, ci.getLevel());
+                        pstmt.addBatch();
+                    }
+                    pstmt.executeBatch();
+                }
+                
+                // 重新启用外键约束
+                try (Statement stmt = conn.createStatement()) {
+                    stmt.execute("PRAGMA foreign_keys = ON");
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.error("升级数据库表结构失败", e);
+            throw new SQLException("升级数据库结构失败", e);
         }
     }
 
@@ -156,8 +289,8 @@ public class DatabaseManager {
             try (ResultSet rs = pstmt.getGeneratedKeys()) {
                 if (rs.next()) {
                     return rs.getInt(1);
-                }
-            }
+        }
+    }
         }
         throw new SQLException("创建贡献失败，无法获取ID");
     }
@@ -266,11 +399,55 @@ public class DatabaseManager {
     }
 
     public static void deleteContribution(int contributionId) throws SQLException {
-        String sql = "DELETE FROM contributions WHERE id = ?";
-        try (Connection conn = getConnection();
-             PreparedStatement pstmt = conn.prepareStatement(sql)) {
+        Connection conn = null;
+        try {
+            conn = getConnection();
+            conn.setAutoCommit(false);  // 开始事务
+            
+            // 先删除关联的贡献者记录
+            String deleteContributorsSQL = "DELETE FROM contributors WHERE contribution_id = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(deleteContributorsSQL)) {
+                pstmt.setInt(1, contributionId);
+                int contributorsDeleted = pstmt.executeUpdate();
+                LOGGER.debug("删除了{}条贡献者记录", contributorsDeleted);
+            }
+            
+            // 再删除贡献
+            String deleteContributionSQL = "DELETE FROM contributions WHERE id = ?";
+            try (PreparedStatement pstmt = conn.prepareStatement(deleteContributionSQL)) {
             pstmt.setInt(1, contributionId);
-            pstmt.executeUpdate();
+                int result = pstmt.executeUpdate();
+                
+                if (result > 0) {
+                    // 清除相关缓存
+                    contributionByIdCache.remove(contributionId);
+                    contributionCache.clear();
+                    lastCacheUpdateTime.clear();
+                    LOGGER.debug("删除贡献并清除缓存, ID={}", contributionId);
+                }
+            }
+            
+            // 提交事务
+            conn.commit();
+        } catch (SQLException e) {
+            // 发生错误时回滚事务
+            if (conn != null) {
+                try {
+                    conn.rollback();
+                } catch (SQLException ex) {
+                    LOGGER.error("回滚事务失败", ex);
+                }
+            }
+            throw e;
+        } finally {
+            if (conn != null) {
+                try {
+                    conn.setAutoCommit(true);  // 恢复自动提交
+                    conn.close();
+                } catch (SQLException e) {
+                    LOGGER.error("关闭连接失败", e);
+                }
+            }
         }
     }
 
@@ -628,7 +805,6 @@ public class DatabaseManager {
     public static void close() throws SQLException {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
-            LOGGER.info("数据库连接池已关闭");
         }
         clearAllCaches();
     }
