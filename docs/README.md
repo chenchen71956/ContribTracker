@@ -1,47 +1,127 @@
 # ContribTracker
 
-ContribTracker是一个Minecraft Fabric服务器模组，用于追踪和管理玩家在服务器中建造的各种贡献（如建筑、红石装置等）。
+ContribTracker是一个Minecraft Fabric模组，用于追踪和管理服务器上的玩家贡献。它允许玩家记录建筑、红石设备、农场等贡献，并管理贡献者权限。
 
-## 项目概述
+## 功能特点
 
-本项目为服务器管理员提供了一套完整的工具，用于记录、管理和展示玩家贡献。通过权限分级和位置追踪等功能，服务器可以更好地组织玩家创作并进行展示。
+### 贡献管理
+- 创建和删除贡献点
+- 按类型分类贡献（建筑、红石、农场等）
+- 记录贡献的位置和创建者信息
+- 查找附近的贡献
 
-## 主要功能
+### 贡献者系统
+- 多级贡献者权限管理
+- 邀请其他玩家成为贡献者
+- 贡献者层级显示
+- 权限继承和管理
 
-- **贡献追踪管理**：记录玩家贡献及其位置信息
-- **权限分级系统**：多层级权限控制，贡献者可管理下级贡献者
-- **位置搜索功能**：快速查找附近贡献
-- **WebSocket API**：实时数据同步接口，支持外部系统集成
-- **高性能设计**：多线程处理、连接池、缓存机制确保服务器性能
+### 命令系统
+- `/contribtracker add type {type} {name}` - 创建新贡献
+- `/contribtracker add player {playerName} {contribId}` - 添加玩家到贡献
+- `/contribtracker delete {contribId}` - 删除贡献
+- `/contribtracker list` - 列出所有贡献
+- `/contribtracker near [radius]` - 查找附近贡献
+- `/contribtracker accept` - 接受贡献邀请
+- `/contribtracker reject` - 拒绝贡献邀请
+- `/contribtracker remove {playerName} {contribId}` - 移除贡献者
 
-## 技术特性
+### WebSocket API
+- 实时数据同步
+- 支持外部应用集成
+- 提供贡献数据查询接口
 
-- 多线程架构，将耗时操作从主线程移至工作线程
-- HikariCP数据库连接池实现
-- 智能数据缓存机制减少数据库访问
-- 批量消息处理减少网络资源消耗
-- 标准化日志输出系统
+## 技术特点
 
-## 项目结构
+- 多线程架构设计，避免阻塞主线程
+- 使用HikariCP数据库连接池优化数据库访问
+- 智能缓存系统减少数据库查询
+- WebSocket批量处理提升网络性能
+- 完善的错误处理和恢复机制
 
+## 安装要求
+
+- Minecraft 1.20.1或更高版本
+- Fabric Loader 0.14.0或更高版本
+- Fabric API 0.42.0或更高版本
+
+## 安装步骤
+
+1. 确保已安装Fabric Loader和Fabric API
+2. 下载最新的ContribTracker发布版本
+3. 将jar文件放入服务器的mods文件夹
+4. 重启服务器
+
+## 配置说明
+
+配置文件位于`config/null_city/contributions/config.json`，可调整以下参数：
+
+```json
+{
+  "websocket": {
+    "port": 8080,
+    "enabled": true
+  },
+  "database": {
+    "cacheExpireTime": 5000,
+    "maxConnections": 5
+  },
+  "system": {
+    "workerThreads": 4,
+    "logLevel": "WARN"
+  }
+}
 ```
-ContribTracker/
-├── src/main/java/com/example/contribtracker/
-│   ├── command/          # 命令实现
-│   ├── config/           # 配置系统
-│   ├── database/         # 数据库相关
-│   ├── util/             # 工具类
-│   │   └── LogHelper.java # 日志工具类
-│   ├── websocket/        # WebSocket服务实现
-│   └── ContribTrackerMod.java # 主类
-├── docs/
-│   ├── README.md         # 项目概述
-│   ├── CHANGELOG.md      # 变更日志
-│   └── PROGRESS.md       # 项目进度
-└── README.md             # 安装和使用说明
-```
 
-## 更多信息
+## 使用指南
 
-详细的安装说明和API文档请参考项目根目录中的README.md文件。
-版本历史和更新内容请查看CHANGELOG.md。 
+### 创建贡献
+1. 站在你想要记录贡献的位置
+2. 执行命令：`/contribtracker add type building 主城大厅`
+3. 系统会记录当前位置和创建者信息
+
+### 添加贡献者
+1. 执行命令：`/contribtracker add player Steve 1`
+2. 玩家会收到邀请通知
+3. 玩家可以使用`/contribtracker accept`接受邀请
+
+### 查找附近贡献
+1. 执行命令：`/contribtracker near 50`
+2. 系统会显示50格范围内的所有贡献
+
+## 权限说明
+
+- `contribtracker.command.basic` - 基础命令权限
+- `contribtracker.command.admin` - 管理员命令权限
+- `contribtracker.manage` - 管理贡献权限
+
+## 性能考量
+
+- 模组使用多线程架构，将耗时操作移至工作线程
+- 数据库操作使用连接池和缓存机制
+- WebSocket通信采用批处理方式
+- 日志系统经过优化，减少I/O操作
+
+## 常见问题
+
+**Q: 服务器TPS下降怎么办？**  
+A: 检查配置文件中的工作线程数和缓存过期时间，适当调整可提高性能。
+
+**Q: WebSocket连接失败怎么办？**  
+A: 检查端口是否被占用，可在配置文件中修改WebSocket端口。
+
+**Q: 如何备份贡献数据？**  
+A: 数据存储在`config/null_city/contributions/contributions.db`文件中，定期备份此文件即可。
+
+## 贡献开发
+
+欢迎提交Pull Request或Issue。开发时请遵循以下准则：
+
+- 遵循Java代码规范
+- 添加适当的注释
+- 编写单元测试
+- 更新文档
+
+## 许可证
+
+本项目采用MIT许可证。详见LICENSE文件。 
